@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AUX WARS | Dashboard</title>
+    <title>AUX WARS | Leaderboard</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
@@ -29,40 +29,16 @@
         <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
     </nav>
 
-    <section class="dashboard-header">
+    <section class="leaderboard-header">
         <div class="page-header">
-            <h1>PLAYER DASHBOARD</h1>
-            <p>Track the scene with quick stats, current top streaks, and leaderboard momentum.</p>
+            <h1>GLOBAL RANKING</h1>
+            <p>See the top AUX players, climbing the ladder on the strongest streaks and biggest ELO scores.</p>
         </div>
     </section>
 
+    <!-- TODO: put supabase api code here to load leaderboard entries dynamically -->
+
     <section class="page-section">
-        <div class="dashboard-summary">
-            <div class="summary-card">
-                <h3>Total Players</h3>
-                <strong>{{ total_players }}</strong>
-            </div>
-            <div class="summary-card">
-                <h3>Total Wins</h3>
-                <strong>{{ total_wins }}</strong>
-            </div>
-            <div class="summary-card">
-                <h3>Average ELO</h3>
-                <strong>{{ avg_elo }}</strong>
-            </div>
-            <div class="summary-card">
-                <h3>Top Streak</h3>
-                <strong>{{ top_streak.name }} (#{{ top_streak.streak }})</strong>
-            </div>
-        </div>
-
-        <div class="leaderboard-header">
-            <div class="page-header">
-                <h1>FAVORITE CONTENDERS</h1>
-                <p>Quick access to the current top players, with stats updated from the leaderboard.</p>
-            </div>
-        </div>
-
         <div class="leaderboard-grid">
             {% for player in players %}
             <div class="leaderboard-card">

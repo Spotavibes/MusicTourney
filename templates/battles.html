@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIVE AUX BATTLES</title>
+
+    <link rel="stylesheet"
+    href="{{ url_for('static', filename='css/style.css') }}">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+</head>
+
+<body>
+
+    <div class="noise"></div>
+
+    <nav class="navbar">
+        <div class="logo"><a href="{{ url_for('home') }}">AUX WARS</a></div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('battles') }}">Battles</a>
+            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
+            <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+        </div>
+
+        <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
+    </nav>
+
+    <section class="battle-list-page">
+
+        <div class="page-header">
+            <h1>LIVE AUX WARS</h1>
+            <p>Jump into ongoing music battles happening right now.</p>
+        </div>
+
+        <div class="battle-list-grid">
+
+            {% for battle in battles %}
+
+            <div class="live-battle-card">
+
+                <div class="live-indicator">
+                    ● LIVE
+                </div>
+
+                <div class="battle-top">
+                    <span>{{ battle.genre }}</span>
+                    <span>{{ battle.viewers }} viewers</span>
+                </div>
+
+                <div class="battle-players">
+
+                    <div class="player-side">
+                        <div class="mini-avatar green"></div>
+                        <h2>{{ battle.left_name }}</h2>
+                    </div>
+
+                    <div class="battle-vs-text">
+                        VS
+                    </div>
+
+                    <div class="player-side">
+                        <div class="mini-avatar pink"></div>
+                        <h2>{{ battle.right_name }}</h2>
+                    </div>
+
+                </div>
+
+                <div class="battle-buttons">
+
+                    <a href="{{ url_for('battle_detail', battle_id=battle.id) }}" class="watch-btn">
+                        ENTER BATTLE
+                    </a>
+
+                    <a href="{{ url_for('spectator', battle_id=battle.id) }}" class="vote-btn">
+                        VOTE LIVE
+                    </a>
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+
+    <script>
+        gsap.from(".live-battle-card", {
+            opacity: 0,
+            y: 30,
+            stagger: 0.12,
+            duration: 0.8
+        });
+    </script>
+
+</body>
+</html>
