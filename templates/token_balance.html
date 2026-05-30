@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AUX WARS | Token Balance</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="noise"></div>
+
+    <nav class="navbar">
+        <div class="logo"><a href="{{ url_for('home') }}">AUX WARS</a></div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('battles') }}">Battles</a>
+            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
+            <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Buy Tokens</a>
+        </div>
+
+        <a class="join-btn" href="{{ url_for('buy_tokens_page') }}">BUY TOKENS</a>
+    </nav>
+
+    <section class="page-section">
+        <div class="page-header">
+            <h1>Token Balance</h1>
+            <p>All token updates are processed server-side after Stripe verifies the payment.</p>
+        </div>
+
+        <div class="balance-card">
+            <h2>Your Balance</h2>
+            <div class="balance-value">{{ user.token_balance }}</div>
+            <p class="balance-text">tokens available for use.</p>
+            <a class="primary-btn" href="{{ url_for('buy_tokens_page') }}">Buy More Tokens</a>
+        </div>
+
+        <div class="transaction-section">
+            <h2>Recent Transactions</h2>
+
+            {% if transactions %}
+            <div class="transaction-list">
+                {% for tx in transactions %}
+                <div class="transaction-row">
+                    <div>
+                        <div class="transaction-title">{{ tx.transaction_type | replace('_', ' ') | title }}</div>
+                        <div class="transaction-meta">{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                    </div>
+                    <div class="transaction-value">+{{ tx.token_amount }} tokens</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="transaction-empty">No token purchases recorded yet.</p>
+            {% endif %}
+        </div>
+    </section>
+</body>
+</html>

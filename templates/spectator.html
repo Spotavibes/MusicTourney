@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AUX WARS | Spectator</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <div class="noise"></div>
+    <div class="blob blob1"></div>
+    <div class="blob blob2"></div>
+
+    <nav class="navbar">
+        <div class="logo">
+            <a href="{{ url_for('home') }}">AUX WARS</a>
+        </div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('battles') }}">Battles</a>
+            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
+            <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Tokens</a>
+        </div>
+
+        <a class="join-btn" href="{{ url_for('battles') }}">BACK</a>
+    </nav>
+
+    <section class="page-section">
+
+        <div class="page-header">
+            <h1>SPECTATOR MODE</h1>
+
+            <p>
+                Watching
+                <strong>{{ battle.left_name }}</strong>
+                vs
+                <strong>{{ battle.right_name }}</strong>.
+                Vote and keep the energy high.
+            </p>
+        </div>
+
+        <div class="voting-container">
+
+            <div class="battle-info-card">
+
+                <h2>
+                    {{ battle.left_name }}
+                    <span class="vs-text">VS</span>
+                    {{ battle.right_name }}
+                </h2>
+
+                <p class="battle-genre">
+                    {{ battle.genre }} - {{ battle.viewers }} viewers
+                </p>
+
+                <div class="vote-stats">
+
+                    <!-- LEFT TEAM -->
+                    <div class="team-column left-team">
+
+                        <div class="vote-percentage">
+                            <span class="percentage-number" id="left-percentage">48</span>%
+                        </div>
+
+                        <div class="stat-row">
+                            <span class="stat-label">Votes:</span>
+                            <span class="stat-value" id="left-votes">2,400</span>
+                        </div>
+
+                        <div class="stat-row">
+                            <span class="stat-label">Trophies:</span>
+                            <span class="stat-value" id="left-trophies">156</span>
+                        </div>
+
+                    </div>
+
+                    <div class="vote-divider"></div>
+
+                    <!-- RIGHT TEAM -->
+                    <div class="team-column right-team">
+
+                        <div class="vote-percentage">
+                            <span class="percentage-number" id="right-percentage">52</span>%
+                        </div>
+
+                        <div class="stat-row">
+                            <span class="stat-label">Votes:</span>
+                            <span class="stat-value" id="right-votes">2,600</span>
+                        </div>
+
+                        <div class="stat-row">
+                            <span class="stat-label">Trophies:</span>
+                            <span class="stat-value" id="right-trophies">142</span>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="total-voters">
+                    <span class="voters-label">Total Voters:</span>
+                    <span class="voters-count" id="total-voters">5,000</span>
+                </div>
+
+                <!-- VOTE BUTTONS -->
+                <div class="vote-buttons">
+
+                    <button
+                        class="vote-btn left-vote-btn"
+                        id="left-vote-btn"
+                        onclick="voteForTeam('left')"
+                    >
+                        Vote for {{ battle.left_name }}
+                        <span class="vote-btn-icon"></span>
+                    </button>
+
+                    <button
+                        class="vote-btn right-vote-btn"
+                        id="right-vote-btn"
+                        onclick="voteForTeam('right')"
+                    >
+                        Vote for {{ battle.right_name }}
+                        <span class="vote-btn-icon"></span>
+                    </button>
+
+                </div>
+
+                <p style="opacity:0.75; margin-top:20px; text-align:center;">
+                    Sign in to vote and access full spectator controls.
+                </p>
+
+            </div>
+
+        </div>
+
+        <div class="battle-actions-container" style="margin-top: 40px;">
+            <a
+                href="{{ url_for('battle_detail', battle_id=battle.id) }}"
+                class="secondary-btn"
+            >
+                ENTER BATTLE
+            </a>
+        </div>
+
+    </section>
+
+    <!-- MAIN APP JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    <!-- PAGE SCRIPT -->
+    <script>
+
+        let userVote = null;
+
+        function voteForTeam(team) {
+
+            const leftBtn = document.getElementById('left-vote-btn');
+            const rightBtn = document.getElementById('right-vote-btn');
+
+            // Remove vote
+            if (userVote === team) {
+
+                userVote = null;
+
+                leftBtn.classList.remove('voted');
+                rightBtn.classList.remove('voted');
+
+                leftBtn.innerHTML =
+                    `Vote for {{ battle.left_name }}
+                    <span class="vote-btn-icon"></span>`;
+
+                rightBtn.innerHTML =
+                    `Vote for {{ battle.right_name }}
+                    <span class="vote-btn-icon">⚡</span>`;
+
+                updateVotes();
+
+                return;
+            }
+
+            // Set vote
+            userVote = team;
+
+            if (team === 'left') {
+
+                leftBtn.classList.add('voted');
+                rightBtn.classList.remove('voted');
+
+                leftBtn.innerHTML =
+                    `<span class="vote-confirmed">
+                        Vote Confirmed
+                    </span>`;
+
+                rightBtn.innerHTML =
+                    `Vote for {{ battle.right_name }}
+                    <span class="vote-btn-icon">⚡</span>`;
+
+            } else {
+
+                rightBtn.classList.add('voted');
+                leftBtn.classList.remove('voted');
+
+                rightBtn.innerHTML =
+                    `<span class="vote-confirmed">
+                        Vote Confirmed
+                    </span>`;
+
+                leftBtn.innerHTML =
+                    `Vote for {{ battle.left_name }}
+                    <span class="vote-btn-icon"></span>`;
+            }
+
+            updateVotes();
+        }
+
+        function updateVotes() {
+
+            const leftVotes =
+                parseInt(
+                    document.getElementById('left-votes')
+                    .textContent.replace(/,/g, '')
+                );
+
+            const rightVotes =
+                parseInt(
+                    document.getElementById('right-votes')
+                    .textContent.replace(/,/g, '')
+                );
+
+            const totalVotes = leftVotes + rightVotes;
+
+            if (totalVotes === 0) return;
+
+            const leftPercentage =
+                Math.round((leftVotes / totalVotes) * 100);
+
+            const rightPercentage = 100 - leftPercentage;
+
+            document.getElementById('left-percentage').textContent =
+                leftPercentage;
+
+            document.getElementById('right-percentage').textContent =
+                rightPercentage;
+
+            document.getElementById('total-voters').textContent =
+                totalVotes.toLocaleString();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            updateVotes();
+        });
+
+    </script>
+
+</body>
+</html>

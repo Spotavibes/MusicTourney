@@ -1,0 +1,152 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spotavibes</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+
+    <!-- Main stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- GSAP for animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+
+<body>
+
+    <!-- Animated grain overlay -->
+    <div class="noise"></div>
+
+    <!-- Floating gradient blobs -->
+    <div class="blob blob1"></div>
+    <div class="blob blob2"></div>
+
+    <!-- NAV -->
+    <nav class="navbar">
+        <div class="logo"><a href="{{ url_for('home') }}">Spotavibes</a></div>
+
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('battles') }}">Battles</a>
+            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
+            <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Tokens</a>
+        </div>
+
+        <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+        <div class="hero-left">
+
+            <div class="live-pill">
+                ● LIVE AUX BATTLES
+            </div>
+
+            <h1>
+                THE INTERNET'S<br>
+                MUSIC TASTE<br>
+                BATTLEGROUND
+            </h1>
+
+            <p>
+                Submit tracks. Defend your taste. Climb the ladder.
+                Battle in cinematic real-time aux wars.
+            </p>
+
+            <div class="hero-buttons">
+                <a class="primary-btn" href="{{ url_for('battles') }}">START MATCHMAKING</a>
+                <a class="secondary-btn" href="{{ url_for('spectator', battle_id=1) }}">WATCH LIVE</a>
+                <a class="secondary-btn" href="{{ url_for('leaderboard_page') }}">LEADERBOARD</a>
+            </div>
+        </div>
+
+        <div class="battle-card">
+            <div class="battle-header">
+                LIVE MATCH
+            </div>
+
+            <div class="battle-vs">
+                <div class="fighter">
+                    <div class="avatar glow-green"></div>
+                    <h3>NEONPHONK</h3>
+                    <span>ELO 2134</span>
+                </div>
+
+                <div class="versus">VS</div>
+
+                <div class="fighter">
+                    <div class="avatar glow-pink"></div>
+                    <h3>BASSLINE.exe</h3>
+                    <span>ELO 2091</span>
+                </div>
+            </div>
+
+            <div class="vote-meter">
+                <div class="left-votes" id="leftVotes"></div>
+                <div class="right-votes" id="rightVotes"></div>
+            </div>
+
+            <div class="battle-actions">
+                <button onclick="vote()">VOTE</button>
+                <button onclick="finishBattle()">FINISH BATTLE</button>
+            </div>
+
+            <div class="winner-popup" id="winnerPopup">
+                <h2 id="winnerText"></h2>
+                <p id="eloText"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- LEADERBOARD -->
+    <section class="leaderboard-section">
+
+        <div class="section-title">
+            TOP PLAYERS
+        </div>
+
+        <div class="leaderboard-grid">
+            {% for player in players %}
+            <div class="leaderboard-card">
+                <div class="rank-number">#{{ loop.index }}</div>
+
+                <div class="card-glow"></div>
+
+                <h2>{{ player.name }}</h2>
+
+                <div class="elo">{{ player.elo }} ELO</div>
+
+                <div class="stats">
+                    <span>{{ player.genre }}</span>
+                    <span>{{ player.wins }} WINS</span>
+                    <span>{{ player.streak }} STREAK</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Floating music player -->
+    <div class="music-player">
+        <div class="waveform">
+            <span></span><span></span><span></span><span></span><span></span>
+        </div>
+
+        <div class="track-info">
+            NOW PLAYING: NIGHT DRIVE FM
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
