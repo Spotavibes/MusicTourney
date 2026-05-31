@@ -33,50 +33,22 @@
     <section class="dashboard-header">
         <div class="page-header">
             <h1>PLAYER DASHBOARD</h1>
-            <p>Track the scene with quick stats, current top streaks, and leaderboard momentum.</p>
+            <p>Your account overview. Rankings live on the global leaderboard.</p>
         </div>
     </section>
 
     <section class="page-section">
         <div class="dashboard-summary">
             <div class="summary-card">
-                <h3>Total Players</h3>
-                <strong>{{ total_players }}</strong>
-            </div>
-            <div class="summary-card">
-                <h3>Total Wins</h3>
-                <strong>{{ total_wins }}</strong>
-            </div>
-            <div class="summary-card">
                 <h3>My Tokens</h3>
                 <strong>{{ user.token_balance }}</strong>
             </div>
-            <div class="summary-card">
-                <h3>Top Streak</h3>
-                <strong>{{ top_streak.name }} (#{{ top_streak.streak }})</strong>
-            </div>
         </div>
 
-        <div class="leaderboard-header">
-            <div class="page-header">
-                <h1>FAVORITE CONTENDERS</h1>
-                <p>Quick access to the current top players, with stats updated from the leaderboard.</p>
-            </div>
-        </div>
-
-        <div class="leaderboard-grid">
-            {% for player in players %}
-            <div class="leaderboard-card">
-                <div class="rank-number">#{{ loop.index }}</div>
-                <h2>{{ player.name }}</h2>
-                <div class="elo">{{ player.elo }} ELO</div>
-                <div class="stats">
-                    <span>{{ player.genre }}</span>
-                    <span>{{ player.wins }} WINS</span>
-                    <span>{{ player.streak }} STREAK</span>
-                </div>
-            </div>
-            {% endfor %}
+        <div class="page-header" style="margin-top: 32px;">
+            <p>
+                <a class="primary-btn" href="{{ url_for('leaderboard_page') }}">View global leaderboard</a>
+            </p>
         </div>
     </section>
 

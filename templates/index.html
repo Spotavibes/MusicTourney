@@ -12,12 +12,6 @@
 
     <!-- Main stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-    <!-- GSAP for animations -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
 <body>
@@ -92,47 +86,13 @@
             </div>
 
             <div class="vote-meter">
-                <div class="left-votes" id="leftVotes"></div>
-                <div class="right-votes" id="rightVotes"></div>
+                <div class="left-votes"></div>
+                <div class="right-votes"></div>
             </div>
 
             <div class="battle-actions">
-                <button onclick="vote()">VOTE</button>
-                <button onclick="finishBattle()">FINISH BATTLE</button>
+                <a class="primary-btn" href="{{ url_for('spectator', battle_id=1) }}">WATCH LIVE</a>
             </div>
-
-            <div class="winner-popup" id="winnerPopup">
-                <h2 id="winnerText"></h2>
-                <p id="eloText"></p>
-            </div>
-        </div>
-    </section>
-
-    <!-- LEADERBOARD -->
-    <section class="leaderboard-section">
-
-        <div class="section-title">
-            TOP PLAYERS
-        </div>
-
-        <div class="leaderboard-grid">
-            {% for player in players %}
-            <div class="leaderboard-card">
-                <div class="rank-number">#{{ loop.index }}</div>
-
-                <div class="card-glow"></div>
-
-                <h2>{{ player.name }}</h2>
-
-                <div class="elo">{{ player.elo }} ELO</div>
-
-                <div class="stats">
-                    <span>{{ player.genre }}</span>
-                    <span>{{ player.wins }} WINS</span>
-                    <span>{{ player.streak }} STREAK</span>
-                </div>
-            </div>
-            {% endfor %}
         </div>
     </section>
 
@@ -147,6 +107,5 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

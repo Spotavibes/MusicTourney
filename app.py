@@ -1,7 +1,6 @@
 
 import logging
 import os
-import random
 from datetime import datetime
 from decimal import Decimal
 
@@ -18,7 +17,6 @@ from flask import (
     url_for,
 )
 from flask_sqlalchemy import SQLAlchemy
-from flask_socketio import SocketIO, emit
 
 # --------------------------------------------------
 # App configuration
@@ -46,8 +44,6 @@ if not STRIPE_WEBHOOK_SECRET:
 # Database setup
 # --------------------------------------------------
 db = SQLAlchemy(app)
-
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # --------------------------------------------------
 # Token product definitions
@@ -143,7 +139,8 @@ def get_current_user():
 # --------------------------------------------------
 # Home and existing app routes
 # --------------------------------------------------
-mock_players = [
+# Leaderboard mock data — only used by /leaderboard (leaderboard.html).
+mock_leaderboard_players = [
     {
         "name": "NEONPHONK",
         "elo": 2134,
@@ -194,38 +191,21 @@ mock_battles = [
 
 @app.route("/")
 def home():
-    return render_template("index.html", players=mock_players)
-
-
-@app.route("/api/leaderboard")
-def leaderboard():
-    sorted_players = sorted(mock_players, key=lambda x: x["elo"], reverse=True)
-    return jsonify(sorted_players)
+    return render_template("index.html")
 
 
 @app.route("/leaderboard")
 def leaderboard_page():
-    sorted_players = sorted(mock_players, key=lambda x: x["elo"], reverse=True)
+    sorted_players = sorted(
+        mock_leaderboard_players, key=lambda x: x["elo"], reverse=True
+    )
     return render_template("leaderboard.html", players=sorted_players)
 
 
 @app.route("/dashboard")
 def dashboard_page():
     user = get_current_user()
-    total_players = len(mock_players)
-    total_wins = sum(player["wins"] for player in mock_players)
-    avg_elo = sum(player["elo"] for player in mock_players) // total_players
-    top_streak = max(mock_players, key=lambda x: x["streak"])
-
-    return render_template(
-        "dashboard.html",
-        user=user,
-        players=mock_players,
-        total_players=total_players,
-        total_wins=total_wins,
-        avg_elo=avg_elo,
-        top_streak=top_streak,
-    )
+    return render_template("dashboard.html", user=user)
 
 
 @app.route("/battles")
@@ -500,29 +480,5 @@ def api_token_history():
     return jsonify(history)
 
 
-# --------------------------------------------------
-# Socket routes
-# --------------------------------------------------
-
-@socketio.on("send_vote")
-def handle_vote(data):
-    updated_votes = {
-        "left": random.randint(10, 100),
-        "right": random.randint(10, 100),
-    }
-
-    emit("vote_update", updated_votes, broadcast=True)
-
-
-@socketio.on("battle_finish")
-def battle_finish():
-    winner = random.choice(["PLAYER A", "PLAYER B"])
-    emit(
-        "winner_reveal",
-        {"winner": winner, "elo_gain": random.randint(14, 32)},
-        broadcast=True,
-    )
-
-
 if __name__ == "__main__":
-    socketio.run(app, debug=True)
+    app.run(debug=True)

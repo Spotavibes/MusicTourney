@@ -6,7 +6,6 @@ Futuristic competitive music battle platform prototype built with:
 - HTML
 - CSS
 - JavaScript
-- Socket.IO
 
 --------------------------------------------------
 INSTALLATION
@@ -60,10 +59,7 @@ FEATURES INCLUDED
 --------------------------------------------------
 
 - Futuristic immersive UI
-- Realtime voting
-- Live winner reveal animations
 - Floating music player
 - Animated leaderboard
 - Responsive layout
-- Socket.IO realtime architecture
 - Cinematic rave/esports aesthetic
