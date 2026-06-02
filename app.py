@@ -1,8 +1,10 @@
 
 import logging
 import os
+import json
 from datetime import datetime
 from decimal import Decimal
+from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 import stripe
@@ -164,6 +166,44 @@ mock_leaderboard_players = [
     },
 ]
 
+# --------------------------------------------------
+# Supabase leaderboard
+# --------------------------------------------------
+def fetch_supabase_leaderboard(limit: int = 20):
+    """
+    Fetch top players from Supabase ordered by highest `elo`.
+
+    Expected table: `public.account_management`
+    """
+
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+    if not supabase_url or not supabase_key:
+        logging.warning("Supabase not configured (missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).")
+        return []
+
+    # Supabase REST API (PostgREST)
+    # Example: {SUPABASE_URL}/rest/v1/account_management?select=*&order=elo.desc&limit=20
+    rest_url = (
+        f"{supabase_url}/rest/v1/account_management"
+        f"?select=*&order=elo.desc&limit={limit}"
+    )
+
+    req = Request(
+        rest_url,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+
+    with urlopen(req, timeout=10) as resp:
+        raw = resp.read().decode("utf-8")
+        return json.loads(raw)
+
 mock_battles = [
     {
         "id": 1,
@@ -196,10 +236,37 @@ def home():
 
 @app.route("/leaderboard")
 def leaderboard_page():
-    sorted_players = sorted(
-        mock_leaderboard_players, key=lambda x: x["elo"], reverse=True
-    )
-    return render_template("leaderboard.html", players=sorted_players)
+    try:
+        rows = fetch_supabase_leaderboard(limit=20)
+    except Exception as e:
+        logging.exception("Supabase leaderboard fetch failed: %s", e)
+        rows = []
+
+    if not rows:
+        # Fallback for local dev when Supabase isn't configured yet.
+        sorted_players = sorted(
+            mock_leaderboard_players, key=lambda x: x["elo"], reverse=True
+        )
+        return render_template("leaderboard.html", players=sorted_players)
+
+    # Map Supabase row -> template fields.
+    # If your table uses different column names, adjust these fallbacks.
+    mapped = []
+    for r in rows:
+        mapped.append(
+            {
+                "name": (
+                    r.get("name")
+                    or r.get("username")
+                    or r.get("display_name")
+                    or r.get("player_name")
+                    or r.get("id")
+                ),
+                "elo": r.get("elo"),
+            }
+        )
+
+    return render_template("leaderboard.html", players=mapped)
 
 
 @app.route("/dashboard")
