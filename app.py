@@ -4,6 +4,7 @@ import os
 import json
 from datetime import datetime
 from decimal import Decimal
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
@@ -167,28 +168,20 @@ mock_leaderboard_players = [
 ]
 
 # --------------------------------------------------
-# Supabase leaderboard
+# Supabase helpers
 # --------------------------------------------------
-def fetch_supabase_leaderboard(limit: int = 20):
-    """
-    Fetch top players from Supabase ordered by highest `elo`.
-
-    Expected table: `public.account_management`
-    """
+def supabase_fetch(table, query_params=None):
+    """Run a GET request against a Supabase (PostgREST) table."""
 
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    supabase_key = os.getenv("SUPABASE_KEY")
 
     if not supabase_url or not supabase_key:
-        logging.warning("Supabase not configured (missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).")
-        return []
+        raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
 
-    # Supabase REST API (PostgREST)
-    # Example: {SUPABASE_URL}/rest/v1/account_management?select=*&order=elo.desc&limit=20
-    rest_url = (
-        f"{supabase_url}/rest/v1/account_management"
-        f"?select=*&order=elo.desc&limit={limit}"
-    )
+    rest_url = f"{supabase_url}/rest/v1/{table}"
+    if query_params:
+        rest_url = f"{rest_url}?{urlencode(query_params)}"
 
     req = Request(
         rest_url,
@@ -201,8 +194,41 @@ def fetch_supabase_leaderboard(limit: int = 20):
     )
 
     with urlopen(req, timeout=10) as resp:
-        raw = resp.read().decode("utf-8")
-        return json.loads(raw)
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def fetch_supabase_leaderboard(limit: int = 20):
+    """Fetch top players from public.account_management ordered by elo."""
+
+    return supabase_fetch(
+        "account_management",
+        {"select": "*", "order": "elo.desc", "limit": str(limit)},
+    )
+
+
+def fetch_tournament_names():
+    """Distinct tournament names from match_history.which_tourney."""
+
+    rows = supabase_fetch("match_history", {"select": "which_tourney"})
+    names = {
+        row["which_tourney"]
+        for row in rows
+        if row.get("which_tourney") is not None
+    }
+    return sorted(names, key=str)
+
+
+def fetch_matches_for_tournament(which_tourney):
+    """All match_history rows for one tournament, ordered by round."""
+
+    return supabase_fetch(
+        "match_history",
+        {
+            "select": "*",
+            "which_tourney": f"eq.{which_tourney}",
+            "order": "which_round.asc",
+        },
+    )
 
 mock_battles = [
     {
@@ -267,6 +293,34 @@ def leaderboard_page():
         )
 
     return render_template("leaderboard.html", players=mapped)
+
+
+@app.route("/match-history")
+def match_history_page():
+    tournaments = []
+    matches = []
+    columns = []
+    selected_tournament = request.args.get("which_tourney", "")
+    error = None
+
+    try:
+        tournaments = fetch_tournament_names()
+        if selected_tournament:
+            matches = fetch_matches_for_tournament(selected_tournament)
+            if matches:
+                columns = list(matches[0].keys())
+    except Exception as e:
+        logging.exception("Match history fetch failed: %s", e)
+        error = str(e)
+
+    return render_template(
+        "match_history.html",
+        tournaments=tournaments,
+        matches=matches,
+        columns=columns,
+        selected_tournament=selected_tournament,
+        error=error,
+    )
 
 
 @app.route("/dashboard")

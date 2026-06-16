@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Match History</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .match-history-form {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .match-history-form select {
+            min-width: 220px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: #1a1a1a;
+            color: white;
+        }
+
+        .match-table-wrap {
+            overflow-x: auto;
+        }
+
+        .match-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .match-table th,
+        .match-table td {
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .match-table th {
+            background: rgba(30, 215, 96, 0.15);
+        }
+
+        .error-box {
+            color: #ff8a8a;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="noise"></div>
+
+    <nav class="navbar">
+        <div class="logo"><a href="{{ url_for('home') }}">Spotavibes</a></div>
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('match_history_page') }}">Match History</a>
+            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
+        </div>
+    </nav>
+
+    <section class="page-section">
+        <div class="page-header">
+            <h1>Tournament Match History</h1>
+            <p>Pick a tournament to see every game in <code>match_history</code>.</p>
+        </div>
+
+        {% if error %}
+        <p class="error-box">{{ error }}</p>
+        {% endif %}
+
+        <form class="match-history-form" method="get" action="{{ url_for('match_history_page') }}">
+            <label for="which_tourney">Tournament</label>
+            <select id="which_tourney" name="which_tourney" required>
+                <option value="" disabled {% if not selected_tournament %}selected{% endif %}>
+                    Select a tournament
+                </option>
+                {% for tournament in tournaments %}
+                <option value="{{ tournament }}" {% if tournament == selected_tournament %}selected{% endif %}>
+                    {{ tournament }}
+                </option>
+                {% endfor %}
+            </select>
+            <button class="primary-btn" type="submit">Go</button>
+        </form>
+
+        {% if selected_tournament and not error %}
+            {% if matches %}
+            <p><strong>{{ matches|length }}</strong> game(s) in <strong>{{ selected_tournament }}</strong></p>
+            <div class="match-table-wrap">
+                <table class="match-table">
+                    <thead>
+                        <tr>
+                            {% for column in columns %}
+                            <th>{{ column }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for match in matches %}
+                        <tr>
+                            {% for column in columns %}
+                            <td>{{ match[column] }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p>No games found for this tournament.</p>
+            {% endif %}
+        {% elif not tournaments and not error %}
+            <p>No tournaments found in match_history yet.</p>
+        {% endif %}
+    </section>
+</body>
+</html>
