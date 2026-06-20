@@ -6,12 +6,15 @@ from datetime import datetime
 from decimal import Decimal
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 from dotenv import load_dotenv
+
 import stripe
 from flask import (
     Flask,
     abort,
+    flash,
     jsonify,
     redirect,
     render_template,
@@ -19,7 +22,8 @@ from flask import (
     session,
     url_for,
 )
-from flask_sqlalchemy import SQLAlchemy
+import re
+
 
 # --------------------------------------------------
 # App configuration
@@ -30,8 +34,7 @@ load_dotenv(dotenv_path=dotenv_path)  # Load environment variables from local .e
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "auxwars-secret")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///app.db")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,7 +49,7 @@ if not STRIPE_WEBHOOK_SECRET:
 # --------------------------------------------------
 # Database setup
 # --------------------------------------------------
-db = SQLAlchemy(app)
+
 
 # --------------------------------------------------
 # Token product definitions
@@ -73,76 +76,31 @@ TOKEN_PACKAGES = {
 # Models
 # --------------------------------------------------
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    token_balance = db.Column(db.Integer, nullable=False, default=0)
-    transactions = db.relationship("TokenTransaction", back_populates="user")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "username": self.username,
-            "token_balance": self.token_balance,
-        }
 
 
-class TokenTransaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    transaction_type = db.Column(db.String(50), nullable=False)
-    token_amount = db.Column(db.Integer, nullable=False)
-    dollar_amount = db.Column(db.Numeric(10, 2), nullable=False)
-    stripe_session_id = db.Column(db.String(255), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-    user = db.relationship("User", back_populates="transactions")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "transaction_type": self.transaction_type,
-            "token_amount": self.token_amount,
-            "dollar_amount": float(self.dollar_amount),
-            "stripe_session_id": self.stripe_session_id,
-            "created_at": self.created_at.isoformat(),
-        }
 
 
-with app.app_context():
-    db.create_all()
 
 # --------------------------------------------------
 # Auth helper
 # --------------------------------------------------
 
 def get_current_user():
-    """Return the logged-in user object.
-
-    Aadi input the user id/login info code here.
-    Replace the fallback below with your auth system logic.
-    """
-    user = None
+    """Return the logged-in user's account_management row, or None."""
     user_id = session.get("user_id")
-
-    if user_id:
-        user = User.query.get(user_id)
-
-    if not user:
-        user = User.query.filter_by(username="demo").first()
-        if not user:
-            user = User(username="demo", token_balance=0)
-            db.session.add(user)
-            db.session.commit()
-
-    return user
+    if not user_id:
+        return None
+    try:
+        return supabase_get_account(user_id)
+    except Exception as e:
+        logging.exception("Failed to fetch account for %s: %s", user_id, e)
+        return None
 
 
 # --------------------------------------------------
 # Home and existing app routes
 # --------------------------------------------------
-# Leaderboard mock data — only used by /leaderboard (leaderboard.html).
+# Leaderboard mock data - only used by /leaderboard (leaderboard.html).
 mock_leaderboard_players = [
     {
         "name": "NEONPHONK",
@@ -170,6 +128,18 @@ mock_leaderboard_players = [
 # --------------------------------------------------
 # Supabase helpers
 # --------------------------------------------------
+
+def supabase_transaction_exists(stripe_session_id):
+    rows = supabase_fetch(
+        "token_transactions",
+        {
+            "select": "id",
+            "stripe_session_id": f"eq.{stripe_session_id}",
+        },
+    )
+    return bool(rows)
+
+
 def supabase_fetch(table, query_params=None):
     """Run a GET request against a Supabase (PostgREST) table."""
 
@@ -196,12 +166,84 @@ def supabase_fetch(table, query_params=None):
     with urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
+def supabase_patch(table, row_id, data):
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    url = f"{supabase_url}/rest/v1/{table}?id=eq.{row_id}"
+    body = json.dumps(data).encode("utf-8")
+    req = Request(url, data=body, headers={
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }, method="PATCH")
+    with urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def supabase_post(table, data):
+    """Insert a row into a Supabase table using the REST API."""
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
+
+    rest_url = f"{supabase_url}/rest/v1/{table}"
+    body = json.dumps(data).encode("utf-8")
+
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        method="POST",
+    )
+
+    with urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def supabase_auth_signup(email, password, username):
+    url = f"{os.getenv('SUPABASE_URL')}/auth/v1/signup"
+    body = json.dumps({
+        "email": email,
+        "password": password,
+        "data": {"username": username},
+    }).encode("utf-8")
+    req = Request(url, data=body, headers={
+        "apikey": os.getenv("SUPABASE_KEY"),
+        "Content-Type": "application/json",
+    }, method="POST")
+    with urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+#login auth functions 
+def supabase_auth_login(email, password):
+    url = f"{os.getenv('SUPABASE_URL')}/auth/v1/token?grant_type=password"
+    body = json.dumps({"email": email, "password": password}).encode("utf-8")
+    req = Request(url, data=body, headers={
+        "apikey": os.getenv("SUPABASE_KEY"),
+        "Content-Type": "application/json",
+    }, method="POST")
+    with urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+#functions for getting the needed var
+
+def supabase_get_account(user_id):
+    rows = supabase_fetch("account_management", {"select": "*", "id": f"eq.{user_id}"})
+    return rows[0] if rows else None
+
+
+
 
 def fetch_supabase_leaderboard(limit: int = 20):
-    """Fetch top players from public.account_management ordered by elo."""
-
     return supabase_fetch(
-        "account_management",
+        "leaderboard_view",
         {"select": "*", "order": "elo.desc", "limit": str(limit)},
     )
 
@@ -325,12 +367,21 @@ def match_history_page():
 
 @app.route("/dashboard")
 def dashboard_page():
+    # Require an explicit logged-in session to view the dashboard
+    if not session.get("user_id"):
+        flash("Please log in to view the dashboard.", "error")
+        return redirect(url_for("login"))
+
     user = get_current_user()
     return render_template("dashboard.html", user=user)
 
 
 @app.route("/battles")
 def battles():
+    if not session.get("user_id"):
+        flash("Please log in to view battles.", "error")
+        return redirect(url_for("login"))
+
     return render_template("battles.html", battles=mock_battles)
 
 
@@ -363,17 +414,21 @@ def buy_tokens_page():
 @app.route("/token-balance")
 def token_balance_page():
     user = get_current_user()
-    transactions = (
-        TokenTransaction.query.filter_by(user_id=user.id)
-        .order_by(TokenTransaction.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    return render_template(
-        "token_balance.html",
-        user=user,
-        transactions=transactions,
-    )
+    if not user:
+        flash("Please log in.", "error")
+        return redirect(url_for("login"))
+    transactions = supabase_fetch("token_transactions", {
+        "select": "*", "user_id": f"eq.{user['id']}",
+        "order": "created_at.desc", "limit": "10",
+    })
+    return render_template("token_balance.html", user=user, transactions=transactions)
+
+@app.route("/api/tokens/balance")
+def api_token_balance():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+    return jsonify({"token_balance": user.get("tokens", 0)})
 
 
 @app.route("/purchase-success")
@@ -405,6 +460,9 @@ def purchase_cancel():
 @app.route("/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in."}), 401
+
     data = request.get_json(force=True, silent=True) or {}
     package_id = data.get("package_id")
     package = TOKEN_PACKAGES.get(package_id)
@@ -435,13 +493,11 @@ def create_checkout_session():
                 }
             ],
             metadata={
-                "user_id": str(user.id),
+                "user_id": user["id"],   # UUID string now, not str(int)
                 "package_id": package_id,
             },
         )
-
         return jsonify({"checkout_url": session_data.url})
-
     except Exception as error:
         logging.exception("Stripe checkout session creation failed")
         return jsonify({"error": "Unable to create Stripe checkout session."}), 500
@@ -457,9 +513,7 @@ def stripe_webhook():
         return "Webhook secret not configured", 400
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
     except ValueError:
         logging.error("Invalid webhook payload")
         return "Invalid payload", 400
@@ -467,118 +521,58 @@ def stripe_webhook():
         logging.error("Invalid webhook signature")
         return "Invalid signature", 400
 
-    # Log all events received for debugging
     logging.info("Stripe webhook event received: %s", event["type"])
 
-    # Handle checkout.session.completed
-    if event["type"] == "checkout.session.completed":
-        session_object = event["data"]["object"]
-        stripe_session_id = session_object["id"]
-
-        existing_transaction = TokenTransaction.query.filter_by(
-            stripe_session_id=stripe_session_id
-        ).first()
-        if existing_transaction:
-            logging.info(
-                "Stripe webhook already processed for session %s", stripe_session_id
-            )
-            return jsonify({"status": "already_processed"}), 200
-
-        metadata = session_object["metadata"] if "metadata" in session_object else {}
-        
-        user_id = metadata["user_id"] if "user_id" in metadata else None
-        package_id = metadata["package_id"] if "package_id" in metadata else None
-
-        if not user_id or not package_id:
-            logging.error(
-                "Missing metadata in Stripe session %s: %s", stripe_session_id, metadata
-            )
-            return "Missing metadata", 400
-
-        package = TOKEN_PACKAGES.get(package_id)
-        if not package:
-            logging.error(
-                "Unknown package_id in webhook: %s", package_id
-            )
-            return "Invalid package", 400
-
-        user = User.query.get(int(user_id))
-        if not user:
-            logging.error("Unable to find user %s for Stripe session %s", user_id, stripe_session_id)
-            return "User not found", 400
-
-        user.token_balance += package["token_amount"]
-        transaction = TokenTransaction(
-            user_id=user.id,
-            transaction_type="token_purchase",
-            token_amount=package["token_amount"],
-            dollar_amount=package["dollar_amount"],
-            stripe_session_id=stripe_session_id,
-        )
-
-        db.session.add(transaction)
-        db.session.commit()
-
-        logging.info(
-            "Added %s tokens to user %s for Stripe session %s",
-            package["token_amount"],
-            user.id,
-            stripe_session_id,
-        )
-
-    # Handle payment_intent.succeeded as fallback (payment already processed)
-    elif event["type"] == "payment_intent.succeeded":
-        payment_intent = event["data"]["object"]
-        metadata = payment_intent["metadata"] if "metadata" in payment_intent else {}
-        
-        user_id = metadata["user_id"] if "user_id" in metadata else None
-        package_id = metadata["package_id"] if "package_id" in metadata else None
-        stripe_session_id = metadata["checkout_session_id"] if "checkout_session_id" in metadata else None
-
-        if not stripe_session_id:
-            logging.warning("No checkout_session_id in payment_intent metadata")
-            return jsonify({"received": True}), 200
-
-        existing_transaction = TokenTransaction.query.filter_by(
-            stripe_session_id=stripe_session_id
-        ).first()
-        if existing_transaction:
-            logging.info(
-                "Stripe webhook already processed for session %s", stripe_session_id
-            )
-            return jsonify({"status": "already_processed"}), 200
-
-        if not user_id or not package_id:
-            logging.error("Missing user_id or package_id in payment_intent metadata")
-            return jsonify({"received": True}), 200
+    def credit_tokens(user_id, package_id, stripe_session_id):
+        if supabase_transaction_exists(stripe_session_id):
+            logging.info("Already processed session %s", stripe_session_id)
+            return
 
         package = TOKEN_PACKAGES.get(package_id)
         if not package:
             logging.error("Unknown package_id in webhook: %s", package_id)
+            return
+
+        account = supabase_get_account(user_id)
+        if not account:
+            logging.error("Unable to find account %s for session %s", user_id, stripe_session_id)
+            return
+
+        new_balance = account.get("tokens", 0) + package["token_amount"]
+        supabase_patch("account_management", user_id, {"tokens": new_balance})
+        supabase_post("token_transactions", {
+            "user_id": user_id,
+            "amount": package["token_amount"],
+            "reason": "stripe_purchase",
+            "stripe_session_id": stripe_session_id,
+        })
+        logging.info("Added %s tokens to user %s", package["token_amount"], user_id)
+
+    if event["type"] == "checkout.session.completed":
+        session_object = event["data"]["object"]
+        metadata = session_object.get("metadata", {})
+        user_id = metadata.get("user_id")
+        package_id = metadata.get("package_id")
+        stripe_session_id = session_object["id"]
+
+        if not user_id or not package_id:
+            logging.error("Missing metadata in session %s: %s", stripe_session_id, metadata)
+            return "Missing metadata", 400
+
+        credit_tokens(user_id, package_id, stripe_session_id)
+
+    elif event["type"] == "payment_intent.succeeded":
+        payment_intent = event["data"]["object"]
+        metadata = payment_intent.get("metadata", {})
+        user_id = metadata.get("user_id")
+        package_id = metadata.get("package_id")
+        stripe_session_id = metadata.get("checkout_session_id")
+
+        if not stripe_session_id or not user_id or not package_id:
+            logging.warning("Missing metadata in payment_intent")
             return jsonify({"received": True}), 200
 
-        user = User.query.get(int(user_id))
-        if not user:
-            logging.error("Unable to find user %s for payment_intent", user_id)
-            return jsonify({"received": True}), 200
-
-        user.token_balance += package["token_amount"]
-        transaction = TokenTransaction(
-            user_id=user.id,
-            transaction_type="token_purchase",
-            token_amount=package["token_amount"],
-            dollar_amount=package["dollar_amount"],
-            stripe_session_id=stripe_session_id,
-        )
-
-        db.session.add(transaction)
-        db.session.commit()
-
-        logging.info(
-            "Added %s tokens to user %s for payment_intent",
-            package["token_amount"],
-            user.id,
-        )
+        credit_tokens(user_id, package_id, stripe_session_id)
 
     return jsonify({"received": True}), 200
 
@@ -587,18 +581,115 @@ def stripe_webhook():
 # API endpoints
 # --------------------------------------------------
 
-@app.route("/api/tokens/balance")
-def api_token_balance():
-    user = get_current_user()
-    return jsonify({"token_balance": user.token_balance})
+
 
 
 @app.route("/api/tokens/history")
 def api_token_history():
     user = get_current_user()
-    history = [tx.to_dict() for tx in user.transactions]
-    history.sort(key=lambda row: row["created_at"], reverse=True)
-    return jsonify(history)
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+    rows = supabase_fetch("token_transactions", {
+        "select": "*", "user_id": f"eq.{user['id']}", "order": "created_at.desc",
+    })
+    return jsonify(rows)
+
+
+# ----------------------
+# Authentication routes
+# ----------------------
+
+#register page
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "GET":
+        return render_template("register.html")
+
+    username = request.form.get("username", "").strip()
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    if not username or not email or not password or not confirm:
+        flash("Please fill in all fields.", "error")
+        return render_template("register.html")
+
+    if len(password) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return render_template("register.html")
+
+    if password != confirm:
+        flash("Passwords do not match.", "error")
+        return render_template("register.html")
+
+    email_re = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    if not re.match(email_re, email):
+        flash("Please provide a valid email address.", "error")
+        return render_template("register.html")
+
+    try:
+        supabase_auth_signup(email, password, username)
+        flash("Account created. Please check your email to confirm, then log in.", "success")
+        return redirect(url_for("login"))
+    except HTTPError as e:
+        body = json.loads(e.read().decode("utf-8"))
+        msg = body.get("msg") or body.get("error_description") or "Unable to create account."
+        flash(msg, "error")
+        return render_template("register.html")
+    except Exception as e:
+        logging.exception("Error registering user: %s", e)
+        flash("Unable to create account right now.", "error")
+        return render_template("register.html")
+
+#login page
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html")
+
+    email = request.form.get("username", "").strip()  # rename field to email in login.html
+    password = request.form.get("password", "")
+    remember = request.form.get("remember")
+
+    if not email or not password:
+        flash("Please enter email and password.", "error")
+        return render_template("login.html")
+
+    try:
+        result = supabase_auth_login(email, password)
+        session["user_id"] = result["user"]["id"]
+        session["access_token"] = result["access_token"]
+        session.permanent = bool(remember)
+        return redirect(url_for("login_success"))
+    except HTTPError as e:
+        flash("Invalid email or password.", "error")
+        return render_template("login.html")
+    except Exception as e:
+        logging.exception("Error during login: %s", e)
+        flash("Login failed due to an internal error.", "error")
+        return render_template("login.html")
+
+#go to login success page
+@app.route("/login-success")
+def login_success():
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+
+    return render_template("login_success.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/battle")
+def battle_redirect():
+    # Friendly route to send users to the battles listing
+    return redirect(url_for("battles"))
 
 
 if __name__ == "__main__":

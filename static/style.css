@@ -1,0 +1,13 @@
+@import url('/static/css/style.css');
+
+/* Extra form styles to make forms more prominent */
+form label { display:block; color: rgba(255,255,255,0.85); font-weight:600; margin-bottom:6px; }
+input[type="text"], input[type="password"], input[type="email"] { outline: none; }
+
+/* make page backgrounds a bit darker for auth pages */
+.page-section { background: rgba(10,10,10,0.6); padding: 28px; border-radius: 18px; }
+
+/* flash message helpers */
+.flash { padding: 10px 12px; border-radius: 8px; margin-bottom:12px; }
+.flash.error { background: rgba(255,0,0,0.08); color: #ff6b6b; }
+.flash.success { background: rgba(30,215,96,0.08); color: var(--green); }

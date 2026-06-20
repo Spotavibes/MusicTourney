@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login Successful</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div class="navbar">
+      <div class="logo"><a href="/">AUX WARS</a></div>
+    </div>
+
+    <div class="page-section" style="max-width:560px;margin:140px auto;text-align:center;">
+      <h1 style="color:var(--green);margin-bottom:20px;">Login Successful</h1>
+
+      <div style="display:flex;gap:18px;justify-content:center;margin-top:20px;">
+        <a href="{{ url_for('dashboard_page') }}"><button class="primary-btn">Dashboard</button></a>
+        <a href="/battle"><button class="secondary-btn">Battle</button></a>
+      </div>
+    </div>
+
+    <div class="noise"></div>
+  </body>
+</html>

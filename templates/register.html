@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register - Aux Wars</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div class="navbar">
+      <div class="logo"><a href="/">AUX WARS</a></div>
+    </div>
+
+    <div class="page-section" style="max-width:520px;margin:100px auto;">
+      <h2 style="margin-bottom:18px;">Create account</h2>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, msg in messages %}
+            <div style="color: {{ 'red' if category == 'error' else 'var(--green)'}};margin-bottom:12px;">{{ msg }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" action="{{ url_for('register') }}">
+        <div style="margin-bottom:12px;">
+          <label>Username</label>
+          <input name="username" type="text" placeholder="username" style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;" required>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label>Email</label>
+          <input name="email" type="email" placeholder="you@example.com" style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;" required>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label>Password</label>
+          <input name="password" type="password" placeholder="password" style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;" required>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label>Confirm Password</label>
+          <input name="confirm_password" type="password" placeholder="confirm password" style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;" required>
+        </div>
+
+        <button class="primary-btn" type="submit" style="width:100%;padding:16px;font-size:1.05rem;">Sign Up</button>
+      </form>
+
+      <div style="margin-top:18px;color:rgba(255,255,255,0.8);">Already have an account? <a href="{{ url_for('login') }}"><button class="secondary-btn" style="margin-left:12px;padding:8px 12px;">Login</button></a></div>
+    </div>
+
+    <div class="noise"></div>
+  </body>
+</html>
