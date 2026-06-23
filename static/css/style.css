@@ -97,6 +97,38 @@ body {
     color: var(--green);
 }
 
+/* PROFILE ICON */
+.profile-icon-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.profile-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--green);
+    transition: 0.3s;
+    cursor: pointer;
+    overflow: hidden;
+    background: rgba(255,255,255,0.05);
+}
+
+.profile-icon:hover {
+    border-color: var(--green-dark);
+    box-shadow: 0 0 12px rgba(30, 215, 96, 0.3);
+}
+
+.profile-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
 .page-header,
 .dashboard-header,
 .leaderboard-header {
@@ -973,4 +1005,14 @@ body {
     .vote-percentage {
         font-size: 2.5rem;
     }
+.transaction-value.positive {
+    color: #35ff9c;
+    text-shadow: 0 0 10px rgba(53,255,156,.5);
 }
+
+.transaction-value.negative {
+    color: #ff4f6d;
+    text-shadow: 0 0 10px rgba(255,79,109,.5);
+}
+}
+

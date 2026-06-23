@@ -1,0 +1,11 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="100" fill="#1A1A1A"/>
+  
+  <!-- Border circle -->
+  <circle cx="100" cy="100" r="98" fill="none" stroke="#1ED760" stroke-width="2"/>
+  
+  <!-- Default profile icon (user silhouette) -->
+  <circle cx="100" cy="70" r="24" fill="#1ED760"/>
+  <path d="M 65 140 Q 65 115 100 115 Q 135 115 135 140 L 135 155 Q 135 165 125 165 L 75 165 Q 65 165 65 155 Z" fill="#1ED760"/>
+</svg>

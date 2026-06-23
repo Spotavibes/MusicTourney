@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AUX WARS | Dashboard</title>
+    <title>AUX WARS | Token Balance</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
@@ -11,10 +11,7 @@
 </head>
 
 <body>
-
     <div class="noise"></div>
-    <div class="blob blob1"></div>
-    <div class="blob blob2"></div>
 
     <nav class="navbar">
         <div class="logo"><a href="{{ url_for('home') }}">AUX WARS</a></div>
@@ -24,33 +21,87 @@
             <a href="{{ url_for('battles') }}">Battles</a>
             <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
             <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
-            <a href="{{ url_for('buy_tokens_page') }}">Tokens</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
         </div>
 
-        <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
+        <a class="join-btn" href="{{ url_for('buy_tokens_page') }}">BUY TOKENS</a>
     </nav>
 
-    <section class="dashboard-header">
-        <div class="page-header">
-            <h1>PLAYER DASHBOARD</h1>
-            <p>Your account overview. Rankings live on the global leaderboard.</p>
-        </div>
-    </section>
-
     <section class="page-section">
-        <div class="dashboard-summary">
-            <div class="summary-card">
-                <h3>My Tokens</h3>
-                <strong>{{ user.token_balance }}</strong>
-            </div>
+        <div class="page-header">
+            <h1>Dashboard</h1>
+            <p>Look at Previous Token History</p>
         </div>
+
+        <div class="balance-card">
+            <h2>Your Balance</h2>
+            <div class="balance-value">{{ user.token_balance }}</div>
+            <p class="balance-text">tokens available for use.</p>
+            <a class="primary-btn" href="{{ url_for('buy_tokens_page') }}">Buy More Tokens</a>
+        </div>
+
+        
+       <div class="transaction-section">
+    <h2>Recent Transactions</h2>
+
+    {% if transactions %}
+    <div class="transaction-list">
+
+        {% for tx in transactions %}
+        <div class="transaction-row">
+
+            <div>
+                <div class="transaction-title">
+                    {{ tx.reason | replace('_', ' ') | title }}
+                </div>
+
+                <div class="transaction-meta">
+                    {{ tx.created_at[:19].replace('T', ' ') }}
+                </div>
+            </div>
+
+            <div class="transaction-value 
+    {% if tx.amount > 0 %}
+        positive
+    {% else %}
+        negative
+    {% endif %}
+">
+    {% if tx.amount > 0 %}
+        +{{ tx.amount }}
+    {% else %}
+        {{ tx.amount }}
+    {% endif %}
+    Tokens
+</div>
+
+        </div>
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+    <p class="transaction-empty">
+        No token purchases recorded yet.
+    </p>
+    {% endif %}
+</div>
+
 
         <div class="page-header" style="margin-top: 32px;">
             <p>
                 <a class="primary-btn" href="{{ url_for('leaderboard_page') }}">View global leaderboard</a>
             </p>
         </div>
-    </section>
 
+
+         <div class="page-header" style="margin-top: 32px;">
+            <p>
+                <a class="primary-btn" href="{{ url_for('logout') }}">Logout</a>
+            </p>
+        </div>
+
+        
+    </section>
 </body>
 </html>

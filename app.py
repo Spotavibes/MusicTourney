@@ -85,16 +85,33 @@ TOKEN_PACKAGES = {
 # Auth helper
 # --------------------------------------------------
 
+
+
 def get_current_user():
     """Return the logged-in user's account_management row, or None."""
     user_id = session.get("user_id")
     if not user_id:
         return None
     try:
-        return supabase_get_account(user_id)
+        account = supabase_get_account(user_id)
+        if account is not None:
+            # Normalize so all pages can consistently use user.token_balance,
+            # regardless of the underlying Supabase column name ("tokens").
+            account["token_balance"] = account.get("tokens", 0)
+        return account
     except Exception as e:
         logging.exception("Failed to fetch account for %s: %s", user_id, e)
         return None
+    
+
+# --------------------------------------------------
+# Template context processor
+# --------------------------------------------------
+@app.context_processor
+def inject_user():
+    """Inject current user info into all pages."""
+    user = get_current_user()
+    return {"current_user": user}
 
 
 # --------------------------------------------------
@@ -367,13 +384,28 @@ def match_history_page():
 
 @app.route("/dashboard")
 def dashboard_page():
-    # Require an explicit logged-in session to view the dashboard
+
     if not session.get("user_id"):
         flash("Please log in to view the dashboard.", "error")
         return redirect(url_for("login"))
 
     user = get_current_user()
-    return render_template("dashboard.html", user=user)
+
+    transactions = supabase_fetch(
+        "token_transactions",
+        {
+            "select": "*",
+            "user_id": f"eq.{user['id']}",
+            "order": "created_at.desc",
+            "limit": "10",
+        },
+    )
+
+    return render_template(
+        "dashboard.html",
+        user=user,
+        transactions=transactions,
+    )
 
 
 @app.route("/battles")
@@ -420,15 +452,18 @@ def token_balance_page():
     transactions = supabase_fetch("token_transactions", {
         "select": "*", "user_id": f"eq.{user['id']}",
         "order": "created_at.desc", "limit": "10",
+        
     })
+    
     return render_template("token_balance.html", user=user, transactions=transactions)
+
 
 @app.route("/api/tokens/balance")
 def api_token_balance():
     user = get_current_user()
     if not user:
         return jsonify({"error": "Not logged in"}), 401
-    return jsonify({"token_balance": user.get("tokens", 0)})
+    return jsonify({"token_balance": user.get("tokens")})
 
 
 @app.route("/purchase-success")
@@ -611,17 +646,22 @@ def register():
     password = request.form.get("password", "")
     confirm = request.form.get("confirm_password", "")
 
+    # fill all the field error
     if not username or not email or not password or not confirm:
         flash("Please fill in all fields.", "error")
         return render_template("register.html")
 
+    # pass less than 6 error 
     if len(password) < 6:
         flash("Password must be at least 6 characters.", "error")
         return render_template("register.html")
 
+    # pass not equal to confirm pass error
     if password != confirm:
         flash("Passwords do not match.", "error")
         return render_template("register.html")
+    
+    #valid email error
 
     email_re = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
     if not re.match(email_re, email):

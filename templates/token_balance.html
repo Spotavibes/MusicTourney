@@ -21,7 +21,7 @@
             <a href="{{ url_for('battles') }}">Battles</a>
             <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
             <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
-            <a href="{{ url_for('buy_tokens_page') }}">Buy Tokens</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
         </div>
 
         <a class="join-btn" href="{{ url_for('buy_tokens_page') }}">BUY TOKENS</a>
@@ -41,24 +41,55 @@
         </div>
 
         <div class="transaction-section">
-            <h2>Recent Transactions</h2>
+    <h2>Recent Transactions</h2>
 
-            {% if transactions %}
-            <div class="transaction-list">
-                {% for tx in transactions %}
-                <div class="transaction-row">
-                    <div>
-                        <div class="transaction-title">{{ tx.transaction_type | replace('_', ' ') | title }}</div>
-                        <div class="transaction-meta">{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
-                    </div>
-                    <div class="transaction-value">+{{ tx.token_amount }} tokens</div>
+    {% if transactions %}
+    <div class="transaction-list">
+
+        {% for tx in transactions %}
+        <div class="transaction-row">
+
+            <div>
+                <div class="transaction-title">
+                    {{ tx.reason | replace('_', ' ') | title }}
                 </div>
-                {% endfor %}
+
+                <div class="transaction-meta">
+                    {{ tx.created_at[:19].replace('T', ' ') }}
+                </div>
             </div>
-            {% else %}
-            <p class="transaction-empty">No token purchases recorded yet.</p>
-            {% endif %}
+
+            <div class="transaction-value">
+                +{{ tx.amount }} Tokens
+            </div>
+
         </div>
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+    <p class="transaction-empty">
+        No token purchases recorded yet.
+    </p>
+    {% endif %}
+</div>
+
+
+        <div class="page-header" style="margin-top: 32px;">
+            <p>
+                <a class="primary-btn" href="{{ url_for('leaderboard_page') }}">View global leaderboard</a>
+            </p>
+        </div>
+
+
+         <div class="page-header" style="margin-top: 32px;">
+            <p>
+                <a class="primary-btn" href="{{ url_for('logout') }}">Logout</a>
+            </p>
+        </div>
+
+
     </section>
 </body>
 </html>

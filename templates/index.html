@@ -32,10 +32,22 @@
             <a href="{{ url_for('battles') }}">Battles</a>
             <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
             <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
-            <a href="{{ url_for('buy_tokens_page') }}">Tokens</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
         </div>
 
-        <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
+        {% if current_user %}
+            <!-- User profile icon -->
+            <div class="profile-icon-wrapper">
+                <a href="{{ url_for('dashboard_page') }}" class="profile-icon">
+                    <img src="{{ current_user.get('profile_picture_url') or url_for('static', filename='images/default-profile.svg') }}" 
+                         alt="Profile" 
+                         class="profile-image"
+                         title="{{ current_user.get('username', 'Profile') }}">
+                </a>
+            </div>
+        {% else %}
+            <a class="join-btn" href="{{ url_for('login') }}">SIGN IN</a>
+        {% endif %}
     </nav>
 
     <!-- HERO -->
