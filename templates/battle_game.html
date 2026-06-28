@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Game</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="battle-game-layout">
+
+    <div class="player-side red-side">
+
+        <h1>{{ player1.username }}</h1>
+
+        <p>ELO: {{ player1.elo }}</p>
+
+    </div>
+
+    <div class="player-side blue-side">
+
+        <h1>{{ player2.username }}</h1>
+
+        <p>ELO: {{ player2.elo }}</p>
+
+    </div>
+
+</div>
+
+</body>
+</html>

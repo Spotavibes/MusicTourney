@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Accept</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<section class="page-section">
+
+    <div class="page-header">
+        <h1>{{ tournament.title }}</h1>
+
+        <p>{{ tournament.topic }}</p>
+    </div>
+
+    <div class="buyin-card">
+
+        <h2>
+            Buy In
+        </h2>
+
+        <div class="buyin-amount">
+            {{ tournament.buy_in }} Tokens
+        </div>
+
+        <form
+            method="POST"
+            action="{{ url_for('join_tournament', tournament_id=tournament.id) }}"
+        >
+
+            <button class="primary-btn">
+                ACCEPT & JOIN
+            </button>
+
+        </form>
+
+    </div>
+
+</section>
+
+</body>
+</html>

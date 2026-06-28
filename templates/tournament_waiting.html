@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waiting Room</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<section class="page-section">
+
+    <div class="page-header">
+        <h1>Waiting Room</h1>
+
+        <p>
+            {{ tournament.current_players }}/8 Players Joined
+        </p>
+    </div>
+
+    <div class="player-list">
+
+        {% for player in players %}
+
+        <div class="player-card">
+            Seat {{ player.seat_number }}
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+</section>
+
+</body>
+</html>

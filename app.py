@@ -97,7 +97,7 @@ def get_current_user():
         if account is not None:
             # Normalize so all pages can consistently use user.token_balance,
             # regardless of the underlying Supabase column name ("tokens").
-            account["token_balance"] = account.get("tokens", 0)
+            account["tokens"] = account.get("tokens", 0)
         return account
     except Exception as e:
         logging.exception("Failed to fetch account for %s: %s", user_id, e)
@@ -156,6 +156,13 @@ def supabase_transaction_exists(stripe_session_id):
     )
     return bool(rows)
 
+from urllib.error import HTTPError
+
+
+
+
+
+
 
 def supabase_fetch(table, query_params=None):
     """Run a GET request against a Supabase (PostgREST) table."""
@@ -180,22 +187,60 @@ def supabase_fetch(table, query_params=None):
         method="GET",
     )
 
-    with urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        print("FAILED URL:", req.full_url, flush=True)
+        print("STATUS:", e.code, flush=True)
+        print("BODY:", e.read().decode(), flush=True)
+        raise
 
-def supabase_patch(table, row_id, data):
+def supabase_fetch_one(table, query={}):
+    results = supabase_fetch(table, query)
+
+    if results and len(results) > 0:
+        return results[0]
+
+    return None
+
+
+def supabase_patch(table, record_id, data):
+    """Update a row in a Supabase table by id."""
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
-    url = f"{supabase_url}/rest/v1/{table}?id=eq.{row_id}"
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
+
+    rest_url = f"{supabase_url}/rest/v1/{table}?id=eq.{record_id}"
     body = json.dumps(data).encode("utf-8")
-    req = Request(url, data=body, headers={
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }, method="PATCH")
-    with urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        method="PATCH",
+    )
+
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        print("FAILED URL:", rest_url, flush=True)
+        print("STATUS:", e.code, flush=True)
+        print("BODY:", e.read().decode(), flush=True)
+        raise
+    
+    
+
+from urllib.error import HTTPError
+
 
 
 def supabase_post(table, data):
@@ -221,8 +266,14 @@ def supabase_post(table, data):
         method="POST",
     )
 
-    with urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        print("FAILED URL:", rest_url, flush=True)
+        print("STATUS:", e.code, flush=True)
+        print("BODY:", e.read().decode(), flush=True)
+        raise
 
 def supabase_auth_signup(email, password, username):
     url = f"{os.getenv('SUPABASE_URL')}/auth/v1/signup"
@@ -430,7 +481,7 @@ def spectator(battle_id):
     battle = next((b for b in mock_battles if b["id"] == battle_id), None)
     if battle is None:
         return redirect(url_for("battles"))
-    return render_template("spectator.html", battle=battle)
+    return render_template("spectator_page.html", battle=battle)
 
 
 # --------------------------------------------------
@@ -730,6 +781,250 @@ def logout():
 def battle_redirect():
     # Friendly route to send users to the battles listing
     return redirect(url_for("battles"))
+
+@app.route("/tournaments")
+def tournaments_page():
+
+    try:
+        tournaments = supabase_fetch(
+            "tournaments",
+            {
+                "select": "id,title,genre,topic,buy_in,status,current_players,started,max_players,created_at",
+                "order": "created_at.desc",
+            },
+        )
+    except Exception as e:
+        logging.exception("Failed fetching tournaments: %s", e)
+        tournaments = []
+        flash("Unable to load tournaments right now. Please try again later.", "error")
+
+    return render_template(
+        "tournament_browse.html",
+        tournaments=tournaments,
+    )
+
+@app.route("/create-tournament")
+def create_tournament_page():
+
+    return render_template("create_tournament.html")
+
+@app.route("/create-tournament", methods=["POST"])
+def create_tournament():
+
+    user = get_current_user()
+
+    title = request.form.get("title")
+    genre = request.form.get("genre")
+    topic = request.form.get("topic")
+    buy_in = int(request.form.get("buy_in"))
+
+    tournament = supabase_post(
+        "tournaments",
+        {
+            "title": title,
+            "genre": genre,
+            "topic": topic,
+            "buy_in": buy_in,
+            "max_players": 8,
+            "current_players": 0,
+        },
+    )
+
+    return redirect(url_for("tournaments_page"))
+
+
+
+@app.route("/submit-songs/<tournament_id>", methods=["GET", "POST"])
+def submit_songs(tournament_id):
+
+    if request.method == "GET":
+
+        tournament = supabase_fetch_one(
+            "tournaments",
+            {
+                "id": f"eq.{tournament_id}",
+            },
+        )
+
+        return render_template(
+            "song_submission.html",
+            tournament=tournament,
+        )
+
+    # POST logic below
+
+    user = get_current_user()
+
+    if not user:
+        flash("Please log in to submit songs.", "error")
+        return redirect(url_for("login"))
+
+    embed1 = request.form.get("embed1", "").strip()
+    embed2 = request.form.get("embed2", "").strip()
+    embed3 = request.form.get("embed3", "").strip()
+
+    if not embed1 or not embed2 or not embed3:
+        flash("Please submit all three Spotify embed links.", "error")
+        return redirect(
+            url_for(
+                "submit_songs",
+                tournament_id=tournament_id,
+            )
+        )
+
+    supabase_post(
+        "song_submissions",
+        {
+            "tournament_id": tournament_id,
+            "user_id": user["id"],
+            "spotify_embed_1": embed1,
+            "spotify_embed_2": embed2,
+            "spotify_embed_3": embed3,
+            "submitted_at": datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
+    return redirect(
+        url_for(
+            "battle_accept_page",
+            tournament_id=tournament_id,
+        )
+    )
+
+
+
+
+@app.route("/battle-accept/<tournament_id>")
+def battle_accept_page(tournament_id):
+
+    user = get_current_user()
+
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    players = supabase_fetch(
+        "tournaments",
+        {
+            "select": "*",
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    return render_template(
+        "battle_accept.html",
+        tournament=tournament,
+        players=players,
+        user=user,
+    )
+
+@app.route("/join-tournament/<tournament_id>", methods=["POST"])
+def join_tournament(tournament_id):
+
+    user = get_current_user()
+
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    buy_in = tournament["buy_in"]
+
+    if user["tokens"] < buy_in:
+        flash("Not enough tokens.", "error")
+        return redirect(url_for("tournaments_page"))
+
+    new_balance = user["tokens"] - buy_in
+
+    supabase_patch(
+    "account_management",
+    user["id"],
+    {
+        "tokens": new_balance,
+    },
+)
+
+    current_players = tournament["current_players"] + 1
+
+    supabase_patch(
+        "tournaments",
+        tournament_id,
+        {
+            "current_players": current_players,
+        },
+    )
+
+    seat_number = current_players
+
+    supabase_post(
+        "tournament_players",
+        {
+            "tournament_id": tournament_id,
+            "user_id": user["id"],
+            "seat_number": seat_number,
+        },
+    )
+
+    supabase_post(
+        "token_transactions",
+        {
+            "user_id": user["id"],
+            "amount": -buy_in,
+            "match_id": None,
+            "stripe_session_id": None,
+            "transaction_type": "debit",
+            "tournament_id": tournament_id,
+            "description": tournament["title"],
+            "reason": "tournament_buyin",
+        },
+    )
+
+    if current_players >= 8:
+
+        supabase_patch(
+            "tournaments",
+            tournament_id,
+            {
+                "started": True,
+                "status": "active",
+            },
+        )
+
+    return redirect(
+        url_for(
+            "tournament_waiting_page",
+            tournament_id=tournament_id,
+        )
+    )
+@app.route("/waiting/<tournament_id>")
+def tournament_waiting_page(tournament_id):
+
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    players = supabase_fetch(
+        "tournament_players",
+        {
+            "select": "*",
+            "tournament_id": f"eq.{tournament_id}",
+        },
+    )
+
+    return render_template(
+        "tournament_waiting.html",
+        tournament=tournament,
+        players=players,
+    )
+
 
 
 if __name__ == "__main__":
