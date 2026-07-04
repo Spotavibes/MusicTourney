@@ -1,45 +1,207 @@
 <!doctype html>
 <html lang="en">
-  <head>
+
+<head>
+
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
     <title>Login - Aux Wars</title>
-    <link rel="stylesheet" href="/static/style.css">
-  </head>
-  <body>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body>
+
+    <!-- NAVBAR -->
     <div class="navbar">
-      <div class="logo"><a href="/">AUX WARS</a></div>
-    </div>
 
-    <div class="page-section" style="max-width:480px;margin:120px auto;">
-      <h2 style="margin-bottom:18px;">Login</h2>
-
-   
-<div style="margin-bottom:12px;">
-
-
-     <form method="post" action="{{ url_for('login') }}">
-  <div style="margin-bottom:12px;">
-    <label>Email</label>
-    <input type="email" name="username" required style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;">
-  </div>
-
-        <div style="margin-bottom:12px;">
-          <label>Password</label>
-          <input name="password" type="password" placeholder="password" style="width:100%;padding:12px;border-radius:8px;margin-top:6px;background:#111;border:1px solid rgba(255,255,255,0.06);color:white;" required>
+        <div class="logo">
+            <a href="{{ url_for('home') }}">
+                AUX WARS
+            </a>
         </div>
 
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
-          <input id="remember" name="remember" type="checkbox">
-          <label for="remember">Remember Me</label>
-        </div>
-
-        <button class="primary-btn" type="submit" style="width:100%;padding:16px;font-size:1.05rem;">Login</button>
-      </form>
-
-      <div style="margin-top:18px;color:rgba(255,255,255,0.8);">Don't have an account? <a href="{{ url_for('register') }}"><button class="secondary-btn" style="margin-left:12px;padding:8px 12px;">Register</button></a></div>
     </div>
 
+    <!-- LOGIN CARD -->
+    <div
+        class="page-section"
+
+        style="
+            max-width:480px;
+            margin:120px auto;
+        "
+    >
+
+        <h2 style="margin-bottom:18px;">
+            Login
+        </h2>
+
+        <!-- FLASH MESSAGES -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+
+            {% if messages %}
+
+                {% for category, msg in messages %}
+
+                    <div
+                        style="
+                            color:
+                                {{ 'red' if category == 'error' else 'var(--green)' }};
+
+                            margin-bottom:12px;
+                            font-size:0.95rem;
+                        "
+                    >
+
+                        {{ msg }}
+
+                    </div>
+
+                {% endfor %}
+
+            {% endif %}
+
+        {% endwith %}
+
+        <!-- LOGIN FORM -->
+        <form
+            method="POST"
+            action="{{ url_for('login') }}"
+        >
+
+            <!-- EMAIL -->
+            <div style="margin-bottom:12px;">
+
+                <label for="email">
+                    Email
+                </label>
+
+                <input
+                    id="email"
+                    type="email"
+                    name="email"
+                    placeholder="you@example.com"
+                    required
+
+                    style="
+                        width:100%;
+                        padding:12px;
+                        border-radius:8px;
+                        margin-top:6px;
+                        background:#111;
+                        border:1px solid rgba(255,255,255,0.06);
+                        color:white;
+                    "
+                >
+
+            </div>
+
+            <!-- PASSWORD -->
+            <div style="margin-bottom:12px;">
+
+                <label for="password">
+                    Password
+                </label>
+
+                <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="password"
+                    required
+
+                    style="
+                        width:100%;
+                        padding:12px;
+                        border-radius:8px;
+                        margin-top:6px;
+                        background:#111;
+                        border:1px solid rgba(255,255,255,0.06);
+                        color:white;
+                    "
+                >
+
+            </div>
+
+            <!-- REMEMBER ME -->
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:12px;
+                    margin-bottom:18px;
+                "
+            >
+
+                <input
+                    id="remember"
+                    name="remember"
+                    type="checkbox"
+                >
+
+                <label for="remember">
+                    Remember Me
+                </label>
+
+            </div>
+
+            <!-- LOGIN BUTTON -->
+            <button
+                class="primary-btn"
+                type="submit"
+
+                style="
+                    width:100%;
+                    padding:16px;
+                    font-size:1.05rem;
+                "
+            >
+                Login
+            </button>
+
+        </form>
+
+        <!-- REGISTER LINK -->
+        <div
+            style="
+                margin-top:18px;
+                color:rgba(255,255,255,0.8);
+            "
+        >
+
+            Don't have an account?
+
+            <a
+                href="{{ url_for('register') }}"
+                class="secondary-btn"
+
+                style="
+                    margin-left:12px;
+                    padding:8px 12px;
+                    text-decoration:none;
+                    display:inline-block;
+                "
+            >
+                Register
+            </a>
+
+        </div>
+
+    </div>
+
+    <!-- BACKGROUND NOISE -->
     <div class="noise"></div>
-  </body>
+
+</body>
+
 </html>

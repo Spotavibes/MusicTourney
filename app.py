@@ -759,7 +759,7 @@ def login():
     if request.method == "GET":
         return render_template("login.html")
 
-    email = request.form.get("username", "").strip()  # rename field to email in login.html
+    email = request.form.get("email", "").strip()  # rename field to email in login.html
     password = request.form.get("password", "")
     remember = request.form.get("remember")
 

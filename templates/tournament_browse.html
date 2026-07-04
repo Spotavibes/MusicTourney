@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AUX WARS | Tournaments</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="noise"></div>
+
+<nav class="navbar">
+    <div class="logo">
+        <a href="{{ url_for('home') }}">AUX WARS</a>
+    </div>
+
+    <div class="nav-links">
+        <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+        <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
+    </div>
+
+    <a class="join-btn" href="{{ url_for('create_tournament_page') }}">
+        CREATE TOURNAMENT
+    </a>
+</nav>
+
+<section class="page-section">
+
+    <div class="page-header">
+        <h1>Battle Tournaments</h1>
+        <p>Find your next music war.</p>
+    </div>
+
+    <div class="tournament-grid">
+
+        {% for tournament in tournaments %}
+
+        <div class="tournament-card">
+
+            <div class="genre-pill">
+                {{ tournament.genre }}
+            </div>
+
+            <h2>{{ tournament.title }}</h2>
+
+            <p class="topic-text">
+                {{ tournament.topic }}
+            </p>
+
+            <div class="seat-counter">
+                {{ tournament.current_players }}/8
+            </div>
+
+            <div class="buyin-text">
+                Buy In: {{ tournament.buy_in }} Tokens
+            </div>
+
+            <div class="card-buttons">
+
+                {% if tournament.started %}
+
+                <button class="disabled-btn">
+                    STARTED
+                </button>
+
+                {% else %}
+
+                <a
+                    class="join-battle-btn"
+                    href="{{ url_for('submit_songs', tournament_id=tournament.id) }}"
+                >
+                    JOIN
+                </a>
+
+                {% endif %}
+
+                <button class="spectate-btn disabled-btn" disabled>
+                    SPECTATE
+                </button>
+
+            </div>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+</section>
+
+</body>
+</html>
