@@ -6,29 +6,335 @@
     <title>Battle Game</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        .battle-arena {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .side {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 24px;
+            box-sizing: border-box;
+        }
+
+        .side.blue-side {
+            background-color: rgba(30, 100, 220, 0.12);
+            border-right: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .side.red-side {
+            background-color: rgba(220, 40, 40, 0.12);
+        }
+
+        .side-title {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 24px;
+        }
+
+        .blue-side .side-title {
+            color: #4d8dff;
+        }
+
+        .red-side .side-title {
+            color: #ff5c5c;
+        }
+
+        .embed-wrapper {
+            width: 100%;
+            max-width: 420px;
+            opacity: 0.4;
+            transition: opacity 0.4s ease;
+        }
+
+        .embed-wrapper.active {
+            opacity: 1;
+        }
+
+        .embed-wrapper > div {
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .play-btn {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 420px;
+            padding: 16px;
+            font-size: 17px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            color: white;
+        }
+
+        .play-btn.blue-btn {
+            background-color: #1e64dc;
+        }
+
+        .play-btn.red-btn {
+            background-color: #dc2828;
+        }
+
+        .play-btn:disabled {
+            background-color: #444;
+            color: #888;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .vote-btn {
+            margin-top: 30px;
+            width: 100%;
+            max-width: 420px;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            color: white;
+            opacity: 0.3;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .vote-btn.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .vote-btn.blue-btn {
+            background-color: #1e64dc;
+        }
+
+        .vote-btn.red-btn {
+            background-color: #dc2828;
+        }
+
+        .vote-count {
+            margin-top: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            opacity: 0.85;
+        }
+
+        .status-bar {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            opacity: 0.85;
+        }
+    </style>
 </head>
 
 <body>
 
-<div class="battle-game-layout">
+<div class="status-bar" id="status-text">Get ready...</div>
 
-    <div class="player-side red-side">
+<div class="battle-arena">
 
-        <h1>{{ player1.username }}</h1>
+    <div class="side blue-side">
+        <div class="side-title">Seat {{ match.p1_seat }} — {{ p1_username }}</div>
 
-        <p>ELO: {{ player1.elo }}</p>
+        <div class="embed-wrapper" id="p1-embed-wrapper">
+            <div id="p1-embed-container" data-embed-url="{{ match.p1_song }}"></div>
+        </div>
 
+        <button class="play-btn blue-btn" id="p1-play-btn">
+            PLAY SONG
+        </button>
+
+        <button class="vote-btn blue-btn" id="vote-p1-btn">
+            VOTE {{ p1_username }}
+        </button>
+
+        <div class="vote-count" id="p1-vote-count">
+            {{ match.p1_votes or 0 }} votes
+        </div>
     </div>
 
-    <div class="player-side blue-side">
+    <div class="side red-side">
+        <div class="side-title">Seat {{ match.p2_seat }} — {{ p2_username }}</div>
 
-        <h1>{{ player2.username }}</h1>
+        <div class="embed-wrapper" id="p2-embed-wrapper">
+            <div id="p2-embed-container" data-embed-url="{{ match.p2_song }}"></div>
+        </div>
 
-        <p>ELO: {{ player2.elo }}</p>
+        <button class="play-btn red-btn" id="p2-play-btn">
+            PLAY SONG
+        </button>
 
+        <button class="vote-btn red-btn" id="vote-p2-btn">
+            VOTE {{ p2_username }}
+        </button>
+
+        <div class="vote-count" id="p2-vote-count">
+            {{ match.p2_votes or 0 }} votes
+        </div>
     </div>
 
 </div>
+
+<script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+
+<script>
+    const matchIndex = "{{ match.index }}";
+
+    const statusText = document.getElementById("status-text");
+    const p1Wrapper = document.getElementById("p1-embed-wrapper");
+    const p2Wrapper = document.getElementById("p2-embed-wrapper");
+
+    const p1PlayBtn = document.getElementById("p1-play-btn");
+    const p2PlayBtn = document.getElementById("p2-play-btn");
+
+    const voteP1Btn = document.getElementById("vote-p1-btn");
+    const voteP2Btn = document.getElementById("vote-p2-btn");
+    const p1VoteCount = document.getElementById("p1-vote-count");
+    const p2VoteCount = document.getElementById("p2-vote-count");
+
+    let currentTurn = "p1"; // p1 goes first
+    let p1HasPlayed = false;
+    let p2HasPlayed = false;
+
+    let p1Controller = null;
+    let p2Controller = null;
+
+    // Disable both play buttons until the Spotify embeds finish loading.
+    p1PlayBtn.disabled = true;
+    p2PlayBtn.disabled = true;
+    statusText.textContent = "Loading songs...";
+
+    window.onSpotifyIframeApiReady = (IFrameAPI) => {
+
+        const p1Element = document.getElementById("p1-embed-container");
+        const p1Options = {
+            uri: spotifyUrlToUri(p1Element.dataset.embedUrl),
+            width: "100%",
+            height: "352",
+        };
+
+        IFrameAPI.createController(p1Element, p1Options, (controller) => {
+            p1Controller = controller;
+            checkBothLoaded();
+        });
+
+        const p2Element = document.getElementById("p2-embed-container");
+        const p2Options = {
+            uri: spotifyUrlToUri(p2Element.dataset.embedUrl),
+            width: "100%",
+            height: "352",
+        };
+
+        IFrameAPI.createController(p2Element, p2Options, (controller) => {
+            p2Controller = controller;
+            checkBothLoaded();
+        });
+    };
+
+    function spotifyUrlToUri(embedUrl) {
+        // Converts https://open.spotify.com/embed/track/XXXX?... into spotify:track:XXXX
+        const match = embedUrl.match(/embed\/(track|album|playlist|episode)\/([a-zA-Z0-9]+)/);
+        if (!match) {
+            return embedUrl;
+        }
+        const type = match[1];
+        const id = match[2];
+        return `spotify:${type}:${id}`;
+    }
+
+    function checkBothLoaded() {
+        if (p1Controller && p2Controller) {
+            updateTurnUI();
+        }
+    }
+
+    function updateTurnUI() {
+        if (currentTurn === "p1") {
+            statusText.textContent = "Blue team's turn — press play";
+            p1PlayBtn.disabled = false;
+            p2PlayBtn.disabled = true;
+        } else if (currentTurn === "p2") {
+            statusText.textContent = "Red team's turn — press play";
+            p1PlayBtn.disabled = true;
+            p2PlayBtn.disabled = false;
+        } else {
+            statusText.textContent = "Vote for your favorite!";
+            p1PlayBtn.disabled = true;
+            p2PlayBtn.disabled = true;
+            voteP1Btn.classList.add("visible");
+            voteP2Btn.classList.add("visible");
+        }
+    }
+
+    function playP1() {
+        if (currentTurn !== "p1" || p1HasPlayed || !p1Controller) {
+            return;
+        }
+
+        p1HasPlayed = true;
+        p1Wrapper.classList.add("active");
+        p1PlayBtn.disabled = true;
+        p1PlayBtn.textContent = "PLAYING...";
+
+        p1Controller.play();
+
+        // Adjust this duration to roughly match the song clip length.
+        setTimeout(() => {
+            p1Controller.pause();
+            currentTurn = "p2";
+            updateTurnUI();
+        }, 15000);
+    }
+
+    function playP2() {
+        if (currentTurn !== "p2" || p2HasPlayed || !p2Controller) {
+            return;
+        }
+
+        p2HasPlayed = true;
+        p2Wrapper.classList.add("active");
+        p2PlayBtn.disabled = true;
+        p2PlayBtn.textContent = "PLAYING...";
+
+        p2Controller.play();
+
+        // Adjust this duration to roughly match the song clip length.
+        setTimeout(() => {
+            p2Controller.pause();
+            currentTurn = "done";
+            updateTurnUI();
+        }, 15000);
+    }
+
+    p1PlayBtn.addEventListener("click", playP1);
+    p2PlayBtn.addEventListener("click", playP2);
+
+    async function castVote(side) {
+        try {
+            const resp = await fetch(`/vote/${matchIndex}/${side}`, {
+                method: "POST",
+            });
+            const data = await resp.json();
+
+            p1VoteCount.textContent = `${data.p1_votes} votes`;
+            p2VoteCount.textContent = `${data.p2_votes} votes`;
+        } catch (err) {
+            console.error("Vote failed:", err);
+        }
+    }
+
+    voteP1Btn.addEventListener("click", () => castVote("p1"));
+    voteP2Btn.addEventListener("click", () => castVote("p2"));
+</script>
 
 </body>
 </html>

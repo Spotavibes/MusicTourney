@@ -6,87 +6,188 @@
     <title>AUX WARS | Buy Tokens</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
 </head>
 
 <body>
+
     <div class="noise"></div>
 
+    <!-- NAVBAR -->
     <nav class="navbar">
-        <div class="logo"><a href="{{ url_for('home') }}">AUX WARS</a></div>
+
+        <div class="logo">
+            <a href="{{ url_for('home') }}">Spotavibes</a>
+        </div>
 
         <div class="nav-links">
             <a href="{{ url_for('home') }}">Home</a>
-            <a href="{{ url_for('battles') }}">Battles</a>
-            <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
-            <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
-            <a href="{{ url_for('token_balance_page') }}">Tokens</a>
+
+            <a href="{{ url_for('tournaments_page') }}">
+                Battles
+            </a>
+
+            <a href="{{ url_for('leaderboard_page') }}">
+                Leaderboard
+            </a>
+
+            <a href="{{ url_for('dashboard_page') }}">
+                Dashboard
+            </a>
+
+            <a href="{{ url_for('buy_tokens_page') }}">
+                Shop
+            </a>
         </div>
 
-        <a class="join-btn" href="{{ url_for('token_balance_page') }}">MY TOKENS</a>
+        <a
+            class="join-btn"
+            href="{{ url_for('dashboard_page') }}"
+        >
+            MY TOKENS
+        </a>
+
     </nav>
 
+    <!-- PAGE -->
     <section class="page-section">
+
         <div class="page-header">
             <h1>Token Shop</h1>
-            <p>Purchase tokens securely with Stripe Checkout. Tokens are added only after Stripe's verified webhook confirms payment.</p>
+
+            <p>
+                Purchase tokens securely with Stripe Checkout.
+                Tokens are added only after Stripe verifies payment.
+            </p>
         </div>
 
+        <!-- SHOP GRID -->
         <div class="shop-grid">
+
             {% for package_id, package in packages.items() %}
+
             <article class="package-card">
+
                 <div>
                     <h2>{{ package.label }}</h2>
-                    <p>{{ package.token_amount }} tokens</p>
+
+                    <p>
+                        {{ package.token_amount }} tokens
+                    </p>
                 </div>
+
                 <div class="package-price">
-                    ${{ "%.2f" | format(package.dollar_amount) }}
+                    ${{ "%.2f"|format(package.dollar_amount) }}
                 </div>
-                <button class="primary-btn package-buy-btn" data-package="{{ package_id }}">
+
+                <button
+                    class="primary-btn package-buy-btn"
+                    data-package="{{ package_id }}"
+                >
                     Buy Now
                 </button>
+
             </article>
+
             {% endfor %}
+
         </div>
 
+        <!-- USER TOKEN BALANCE -->
         <div class="shop-note">
-            Current balance: <strong>{{ user.token_balance }}</strong> tokens
+
+            Current balance:
+
+            <strong>
+                {{ user.tokens if user else 0 }}
+            </strong>
+
+            tokens
+
         </div>
 
-        <div class="checkout-message" id="checkout-message"></div>
+        <!-- STATUS MESSAGE -->
+        <div
+            class="checkout-message"
+            id="checkout-message"
+        ></div>
+
     </section>
 
+    <!-- JAVASCRIPT -->
     <script>
-        const buttons = document.querySelectorAll('.package-buy-btn');
-        const message = document.getElementById('checkout-message');
+
+        const buttons =
+            document.querySelectorAll('.package-buy-btn');
+
+        const message =
+            document.getElementById('checkout-message');
+
+        const checkoutUrl =
+            "{{ url_for('create_checkout_session') }}";
 
         buttons.forEach(button => {
+
             button.addEventListener('click', async () => {
-                const packageId = button.dataset.package;
-                message.textContent = 'Starting secure Stripe checkout...';
+
+                const packageId =
+                    button.dataset.package;
+
+                message.textContent =
+                    'Starting secure Stripe checkout...';
 
                 try {
-                    const response = await fetch('{{ url_for('create_checkout_session') }}', {
+
+                    const response = await fetch(checkoutUrl, {
                         method: 'POST',
+
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ package_id: packageId })
+
+                        body: JSON.stringify({
+                            package_id: packageId
+                        })
                     });
 
-                    const payload = await response.json();
-                    if (!response.ok || !payload.checkout_url) {
-                        throw new Error(payload.error || 'Unable to create checkout session.');
+                    const payload =
+                        await response.json();
+
+                    if (
+                        !response.ok ||
+                        !payload.checkout_url
+                    ) {
+                        throw new Error(
+                            payload.error ||
+                            'Unable to create checkout session.'
+                        );
                     }
 
-                    window.location = payload.checkout_url;
+                    window.location.href =
+                        payload.checkout_url;
+
                 } catch (error) {
+
                     console.error(error);
-                    message.textContent = 'Checkout could not be started. Please try again.';
+
+                    message.textContent =
+                        'Checkout could not be started. Please try again.';
                 }
+
             });
+
         });
+
     </script>
+
 </body>
 </html>

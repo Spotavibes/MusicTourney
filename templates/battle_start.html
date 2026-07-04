@@ -3,9 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bracket Reveal</title>
+    <title>Battle Start</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        .bracket-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            padding: 20px 0;
+        }
+
+        .bracket-svg {
+            display: block;
+            margin: 0 auto;
+            min-width: 760px;
+        }
+
+        .seat-text {
+            font-family: inherit;
+            font-size: 16px;
+            opacity: 0;
+            transform: translateX(-20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .seat-text.revealed {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .seat-text.scrambling {
+            animation: scramble 1.2s ease-in-out;
+        }
+
+        @keyframes scramble {
+            0%   { transform: translateX(0); }
+            20%  { transform: translateX(15px); }
+            40%  { transform: translateX(-12px); }
+            60%  { transform: translateX(8px); }
+            80%  { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+
+        .champion-label {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .bracket-line {
+            stroke: #333;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .seat-box {
+            stroke: #333;
+            stroke-width: 2;
+            fill: none;
+        }
+    </style>
 </head>
 
 <body>
@@ -13,28 +70,80 @@
 <section class="page-section">
 
     <div class="page-header">
-        <h1>Bracket Locked</h1>
+        <h1>{{ tournament.title }}</h1>
+        <p>The Bracket</p>
     </div>
 
-    <div class="bracket-grid">
+    <div class="bracket-wrapper">
 
-        {% for match in matches %}
+        <svg
+            class="bracket-svg"
+            viewBox="0 0 800 420"
+            xmlns="http://www.w3.org/2000/svg"
+        >
 
-        <div class="match-card">
+            {# ---- Match boxes (8 seats, 4 matches) ---- #}
+            {% for match in bracket %}
 
-            <div>{{ match.player1 }}</div>
+            {% set match_y = 20 + loop.index0 * 100 %}
 
-            <div>VS</div>
+            <rect class="seat-box" x="20" y="{{ match_y }}" width="180" height="36"></rect>
+            <text class="seat-text scrambling" data-seat="p1-{{ loop.index0 }}" x="30" y="{{ match_y + 24 }}">
+                {{ match.p1_seat }}. {{ match.p1_username }}
+            </text>
 
-            <div>{{ match.player2 }}</div>
+            <rect class="seat-box" x="20" y="{{ match_y + 36 }}" width="180" height="36"></rect>
+            <text class="seat-text scrambling" data-seat="p2-{{ loop.index0 }}" x="30" y="{{ match_y + 60 }}">
+                {{ match.p2_seat }}. {{ match.p2_username }}
+            </text>
 
-        </div>
+            {# connector from this match box out to the right #}
+            <path
+                class="bracket-line"
+                d="M 200 {{ match_y + 36 }} H 240"
+            ></path>
 
-        {% endfor %}
+            {% endfor %}
+
+            {# ---- Round 1 -> Round 2 connectors (pairs of matches merge) ---- #}
+            {# Match 0 + Match 1 merge #}
+            <path class="bracket-line" d="M 240 56 V 156" />
+            <path class="bracket-line" d="M 240 106 H 360" />
+
+            {# Match 2 + Match 3 merge #}
+            <path class="bracket-line" d="M 240 256 V 356" />
+            <path class="bracket-line" d="M 240 306 H 360" />
+
+            {# ---- Round 2 -> Champion connector ---- #}
+            <path class="bracket-line" d="M 360 106 V 306" />
+            <path class="bracket-line" d="M 360 206 H 560" />
+
+            {# ---- Champion line + label ---- #}
+            <text class="champion-label" x="580" y="212">Champion</text>
+
+        </svg>
 
     </div>
 
 </section>
+<script>
+    const seatLabels = document.querySelectorAll(".seat-text");
+
+    seatLabels.forEach((label, index) => {
+        setTimeout(() => {
+            label.classList.add("revealed");
+        }, 300 + index * 150);
+
+        setTimeout(() => {
+            label.classList.remove("scrambling");
+        }, 1500 + index * 150);
+    });
+
+    // After 3 seconds, send everyone to the first match of round 1.
+    setTimeout(() => {
+        window.location.href = "{{ url_for('battle_game_redirect', tournament_id=tournament.id) }}";
+    }, 3000);
+</script>
 
 </body>
 </html>

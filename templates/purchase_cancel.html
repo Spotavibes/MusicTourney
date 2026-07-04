@@ -14,14 +14,14 @@
     <div class="noise"></div>
 
     <nav class="navbar">
-        <div class="logo"><a href="{{ url_for('home') }}">AUX WARS</a></div>
+        <div class="logo"><a href="{{ url_for('home') }}">Spotavibes</a></div>
 
         <div class="nav-links">
             <a href="{{ url_for('home') }}">Home</a>
-            <a href="{{ url_for('battles') }}">Battles</a>
+            <a href="{{ url_for('tournaments_page') }}">Battles</a>
             <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
             <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
-            <a href="{{ url_for('token_balance_page') }}">Tokens</a>
+            <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
         </div>
 
         <a class="join-btn" href="{{ url_for('buy_tokens_page') }}">BACK TO SHOP</a>
@@ -39,7 +39,7 @@
 
         <div class="page-actions">
             <a class="primary-btn" href="{{ url_for('buy_tokens_page') }}">Continue Shopping</a>
-            <a class="secondary-btn" href="{{ url_for('token_balance_page') }}">View Token Balance</a>
+            <a class="secondary-btn" href="{{ url_for('dashboard_page') }}">View Token Balance</a>
         </div>
     </section>
 </body>

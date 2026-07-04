@@ -146,6 +146,10 @@ mock_leaderboard_players = [
 # Supabase helpers
 # --------------------------------------------------
 
+
+
+
+
 def supabase_transaction_exists(stripe_session_id):
     rows = supabase_fetch(
         "token_transactions",
@@ -205,15 +209,15 @@ def supabase_fetch_one(table, query={}):
     return None
 
 
-def supabase_patch(table, record_id, data):
-    """Update a row in a Supabase table by id."""
+def supabase_patch(table, record_id, data, id_column="id"):
+    """Update a row in a Supabase table by a given id column (default: id)."""
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
 
     if not supabase_url or not supabase_key:
         raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
 
-    rest_url = f"{supabase_url}/rest/v1/{table}?id=eq.{record_id}"
+    rest_url = f"{supabase_url}/rest/v1/{table}?{id_column}=eq.{record_id}"
     body = json.dumps(data).encode("utf-8")
 
     req = Request(
@@ -236,10 +240,6 @@ def supabase_patch(table, record_id, data):
         print("STATUS:", e.code, flush=True)
         print("BODY:", e.read().decode(), flush=True)
         raise
-    
-    
-
-from urllib.error import HTTPError
 
 
 
@@ -288,6 +288,26 @@ def supabase_auth_signup(email, password, username):
     }, method="POST")
     with urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+import re
+
+def extract_spotify_embed_url(raw_input):
+    """Accepts either a raw Spotify embed URL or a full <iframe> snippet
+    and returns just the embed URL."""
+
+    raw_input = raw_input.strip()
+
+    # If it's already a plain URL, just return it as-is.
+    if raw_input.startswith("http"):
+        return raw_input
+
+    # Otherwise, try to pull the src="..." value out of an iframe tag.
+    match = re.search(r'src="([^"]+)"', raw_input)
+    if match:
+        return match.group(1)
+
+    return raw_input  # fallback: return as-is, will fail validation below
 
 #login auth functions 
 def supabase_auth_login(email, password):
@@ -859,9 +879,9 @@ def submit_songs(tournament_id):
         flash("Please log in to submit songs.", "error")
         return redirect(url_for("login"))
 
-    embed1 = request.form.get("embed1", "").strip()
-    embed2 = request.form.get("embed2", "").strip()
-    embed3 = request.form.get("embed3", "").strip()
+    embed1 = extract_spotify_embed_url(request.form.get("embed1", ""))
+    embed2 = extract_spotify_embed_url(request.form.get("embed2", ""))
+    embed3 = extract_spotify_embed_url(request.form.get("embed3", ""))
 
     if not embed1 or not embed2 or not embed3:
         flash("Please submit all three Spotify embed links.", "error")
@@ -871,6 +891,17 @@ def submit_songs(tournament_id):
                 tournament_id=tournament_id,
             )
         )
+
+    valid_prefix = "https://open.spotify.com/embed/"
+    for embed in (embed1, embed2, embed3):
+        if not embed.startswith(valid_prefix):
+            flash("Please submit valid Spotify embed links (Share → Embed track).", "error")
+            return redirect(
+                url_for(
+                    "submit_songs",
+                    tournament_id=tournament_id,
+                )
+            )
 
     supabase_post(
         "song_submissions",
@@ -891,9 +922,6 @@ def submit_songs(tournament_id):
         )
     )
 
-
-
-
 @app.route("/battle-accept/<tournament_id>")
 def battle_accept_page(tournament_id):
 
@@ -907,11 +935,12 @@ def battle_accept_page(tournament_id):
     )
 
     players = supabase_fetch(
-        "tournaments",
-        {
-            "select": "*",
-            "id": f"eq.{tournament_id}",
-        },
+    "tournament_players",
+    {
+        "select": "*",
+        "tournament_id": f"eq.{tournament_id}",
+    },
+
     )
 
     return render_template(
@@ -920,6 +949,37 @@ def battle_accept_page(tournament_id):
         players=players,
         user=user,
     )
+
+
+from flask import jsonify
+
+@app.route("/tournament-status/<tournament_id>")
+def tournament_status(tournament_id):
+
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    players = supabase_fetch(
+        "tournament_players",
+        {
+            "select": "*",
+            "tournament_id": f"eq.{tournament_id}",
+        },
+    )
+
+    return jsonify({
+        "current_players": tournament["current_players"],
+        "started": tournament["started"],
+        "players": players,
+    })
+
+
+
+import random
 
 @app.route("/join-tournament/<tournament_id>", methods=["POST"])
 def join_tournament(tournament_id):
@@ -942,12 +1002,12 @@ def join_tournament(tournament_id):
     new_balance = user["tokens"] - buy_in
 
     supabase_patch(
-    "account_management",
-    user["id"],
-    {
-        "tokens": new_balance,
-    },
-)
+        "account_management",
+        user["id"],
+        {
+            "tokens": new_balance,
+        },
+    )
 
     current_players = tournament["current_players"] + 1
 
@@ -995,12 +1055,72 @@ def join_tournament(tournament_id):
             },
         )
 
+        generate_bracket(tournament_id)
+
     return redirect(
         url_for(
             "tournament_waiting_page",
             tournament_id=tournament_id,
         )
     )
+
+
+def generate_bracket(tournament_id):
+    """Randomly pair up all 8 players and write the round-1 matchups to match_history."""
+
+    players = supabase_fetch(
+        "tournament_players",
+        {
+            "select": "*",
+            "tournament_id": f"eq.{tournament_id}",
+        },
+    )
+
+    shuffled = players.copy()
+    random.shuffle(shuffled)
+
+    for i in range(0, len(shuffled), 2):
+        p1 = shuffled[i]
+        p2 = shuffled[i + 1]
+
+        p1_submission = supabase_fetch_one(
+            "song_submissions",
+            {
+                "tournament_id": f"eq.{tournament_id}",
+                "user_id": f"eq.{p1['user_id']}",
+            },
+        )
+        p2_submission = supabase_fetch_one(
+            "song_submissions",
+            {
+                "tournament_id": f"eq.{tournament_id}",
+                "user_id": f"eq.{p2['user_id']}",
+            },
+        )
+
+        supabase_post(
+            "match_history",
+            {
+                "which_tourney": tournament_id,
+                "which_round": 1,
+                "player1_id": p1["user_id"],
+                "player2_id": p2["user_id"],
+                "p1_seat": p1["seat_number"],
+                "p2_seat": p2["seat_number"],
+                "p1_song": p1_submission["spotify_embed_1"] if p1_submission else None,
+                "p2_song": p2_submission["spotify_embed_1"] if p2_submission else None,
+                "p1_foreign": None,
+                "p2_foreign": None,
+                "p1_votes": 0,
+                "p2_votes": 0,
+                "current_phase": "pending",
+                "processed": False,
+            },
+        )
+
+
+
+
 @app.route("/waiting/<tournament_id>")
 def tournament_waiting_page(tournament_id):
 
@@ -1025,6 +1145,153 @@ def tournament_waiting_page(tournament_id):
         players=players,
     )
 
+@app.route("/battle-start/<tournament_id>")
+def battle_start_page(tournament_id):
+
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "id": f"eq.{tournament_id}",
+        },
+    )
+
+    matches = supabase_fetch(
+        "match_history",
+        {
+            "select": "*",
+            "which_tourney": f"eq.{tournament_id}",
+            "which_round": "eq.1",
+        },
+    )
+
+    # Need usernames, not just user_ids — fetch all relevant accounts
+    user_ids = []
+    for m in matches:
+        user_ids.append(m["player1_id"])
+        user_ids.append(m["player2_id"])
+
+    # Supabase "in" filter: id=in.(id1,id2,id3)
+    ids_filter = ",".join(user_ids)
+
+    accounts = supabase_fetch(
+        "account_management",
+        {
+            "select": "id,username",
+            "id": f"in.({ids_filter})",
+        },
+    )
+
+    username_by_id = {a["id"]: a["username"] for a in accounts}
+
+    bracket = []
+    for m in matches:
+        bracket.append({
+            "p1_username": username_by_id.get(m["player1_id"], "Unknown"),
+            "p1_seat": m["p1_seat"],
+            "p2_username": username_by_id.get(m["player2_id"], "Unknown"),
+            "p2_seat": m["p2_seat"],
+        })
+
+    return render_template(
+        "battle_start.html",
+        tournament=tournament,
+        bracket=bracket,
+    )
+
+
+
+
+@app.route("/battle-game-redirect/<tournament_id>")
+def battle_game_redirect(tournament_id):
+
+    matches = supabase_fetch(
+        "match_history",
+        {
+            "select": "*",
+            "which_tourney": f"eq.{tournament_id}",
+            "which_round": "eq.1",
+            "processed": "eq.false",
+            "order": "p1_seat.asc",
+            "limit": "1",
+        },
+    )
+
+    if not matches:
+        flash("No active match found.", "error")
+        return redirect(url_for("tournaments_page"))
+
+    match = matches[0]
+
+    return redirect(
+        url_for(
+            "battle_game_page",
+            match_index=match["index"],
+        )
+    )
+
+
+
+
+import uuid
+
+@app.route("/battle-game/<match_index>")
+def battle_game_page(match_index):
+
+    try:
+        uuid.UUID(match_index)
+    except ValueError:
+        flash("Invalid match link.", "error")
+        return redirect(url_for("tournaments_page"))
+
+    match = supabase_fetch_one(
+        "match_history",
+        {
+            "index": f"eq.{match_index}",
+        },
+    )
+
+    if not match:
+        flash("Match not found.", "error")
+        return redirect(url_for("tournaments_page"))
+
+    p1_account = supabase_get_account(match["player1_id"])
+    p2_account = supabase_get_account(match["player2_id"])
+
+    return render_template(
+        "battle_game.html",
+        match=match,
+        p1_username=p1_account["username"] if p1_account else "Unknown",
+        p2_username=p2_account["username"] if p2_account else "Unknown",
+    )
+
+    
+@app.route("/vote/<match_index>/<side>", methods=["POST"])
+def cast_vote(match_index, side):
+
+    if side not in ("p1", "p2"):
+        return jsonify({"error": "Invalid side"}), 400
+
+    match = supabase_fetch_one(
+        "match_history",
+        {
+            "index": f"eq.{match_index}",
+        },
+    )
+
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+
+    if side == "p1":
+        new_votes = (match.get("p1_votes") or 0) + 1
+        supabase_patch("match_history", match_index, {"p1_votes": new_votes}, id_column="index")
+    else:
+        new_votes = (match.get("p2_votes") or 0) + 1
+        supabase_patch("match_history", match_index, {"p2_votes": new_votes}, id_column="index")
+
+    return jsonify({
+        "p1_votes": new_votes if side == "p1" else match.get("p1_votes") or 0,
+        "p2_votes": new_votes if side == "p2" else match.get("p2_votes") or 0,
+    })
 
 
 if __name__ == "__main__":
