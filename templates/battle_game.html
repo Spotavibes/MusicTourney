@@ -1,3 +1,5 @@
+<!-- battle_game.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -133,12 +135,42 @@
             font-weight: bold;
             opacity: 0.85;
         }
+
+        .winner-highlight {
+                outline: 4px solid gold;
+                box-shadow: 0 0 30px gold;
+            }
+
+        .countdown-timer {
+            margin-top: 12px;
+            font-size: 28px;
+            font-weight: bold;
+            color: gold;
+        }
+
+        .side.loser {
+            opacity: 0.35;
+            filter: grayscale(70%);
+            transition: opacity 0.6s ease, filter 0.6s ease;
+        }
+
+        .side-title.winner-text {
+            color: gold !important;
+        }
+
+        .side-title.winner-text {
+            color: gold !important;
+            font-size: 30px;
+            transform: scale(1.08);
+            transition: font-size 0.4s ease, transform 0.4s ease;
+}
     </style>
 </head>
 
 <body>
 
 <div class="status-bar" id="status-text">Get ready...</div>
+<div class="countdown-timer" id="countdown-timer"></div>
 
 <div class="battle-arena">
 
@@ -267,13 +299,10 @@
             p1PlayBtn.disabled = true;
             p2PlayBtn.disabled = false;
         } else {
-            statusText.textContent = "Vote for your favorite!";
-            p1PlayBtn.disabled = true;
-            p2PlayBtn.disabled = true;
-            voteP1Btn.classList.add("visible");
-            voteP2Btn.classList.add("visible");
-        }
-    }
+        p1PlayBtn.disabled = true;
+        p2PlayBtn.disabled = true;
+        statusText.textContent = "Get ready to vote...";
+    }}
 
     function playP1() {
         if (currentTurn !== "p1" || p1HasPlayed || !p1Controller) {
@@ -296,41 +325,123 @@
     }
 
     function playP2() {
-        if (currentTurn !== "p2" || p2HasPlayed || !p2Controller) {
-            return;
-        }
-
-        p2HasPlayed = true;
-        p2Wrapper.classList.add("active");
-        p2PlayBtn.disabled = true;
-        p2PlayBtn.textContent = "PLAYING...";
-
-        p2Controller.play();
-
-        // Adjust this duration to roughly match the song clip length.
-        setTimeout(() => {
-            p2Controller.pause();
-            currentTurn = "done";
-            updateTurnUI();
-        }, 15000);
+    if (currentTurn !== "p2" || p2HasPlayed || !p2Controller) {
+        return;
     }
+
+    p2HasPlayed = true;
+    p2Wrapper.classList.add("active");
+    p2PlayBtn.disabled = true;
+    p2PlayBtn.textContent = "PLAYING...";
+
+    p2Controller.play();
+
+    setTimeout(async () => {
+        p2Controller.pause();
+        currentTurn = "done";
+        updateTurnUI();
+
+        try {
+            const resp = await fetch(`/start-voting/${matchIndex}`, { method: "POST" });
+            if (!resp.ok) {
+                const err = await resp.json();
+                console.error("start-voting rejected:", err);
+            }
+        } catch (err) {
+            console.error("Failed to start voting:", err);
+        }
+        // No longer manually revealing vote buttons here — pollMatchStatus() handles it
+        // once it confirms the server actually recorded phase = "voting".
+    }, 15000);
+}
 
     p1PlayBtn.addEventListener("click", playP1);
     p2PlayBtn.addEventListener("click", playP2);
 
-    async function castVote(side) {
-        try {
-            const resp = await fetch(`/vote/${matchIndex}/${side}`, {
-                method: "POST",
-            });
-            const data = await resp.json();
+   async function castVote(side) {
+    try {
+        const resp = await fetch(`/vote/${matchIndex}/${side}`, {
+            method: "POST",
+        });
+        const data = await resp.json();
 
-            p1VoteCount.textContent = `${data.p1_votes} votes`;
-            p2VoteCount.textContent = `${data.p2_votes} votes`;
-        } catch (err) {
-            console.error("Vote failed:", err);
+        if (!resp.ok) {
+            console.error("Vote rejected:", data.error);
+            return;
         }
+
+        p1VoteCount.textContent = `${data.p1_votes} votes`;
+        p2VoteCount.textContent = `${data.p2_votes} votes`;
+    } catch (err) {
+        console.error("Vote failed:", err);
     }
+}
+    let winnerShown = false;
+    let votingUnlocked = false;
+    const countdownEl = document.getElementById("countdown-timer");
+    let countdownInterval = null;
+
+async function pollMatchStatus() {
+    try {
+        const resp = await fetch(`/match-status/${matchIndex}`);
+        const data = await resp.json();
+
+        p1VoteCount.textContent = `${data.p1_votes} votes`;
+        p2VoteCount.textContent = `${data.p2_votes} votes`;
+
+        if (data.current_phase === "voting" && !votingUnlocked) {
+            votingUnlocked = true;
+            statusText.textContent = "Vote for your favorite!";
+            voteP1Btn.classList.add("visible");
+            voteP2Btn.classList.add("visible");
+
+            if (data.voting_ends_at && !countdownInterval) {
+                const endsAt = new Date(data.voting_ends_at).getTime();
+                countdownInterval = setInterval(() => {
+                    const secondsLeft = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+                    countdownEl.textContent = secondsLeft > 0 ? `${secondsLeft}s left to vote` : "Voting closed...";
+                    if (secondsLeft <= 0) {
+                        clearInterval(countdownInterval);
+                    }
+                }, 250);
+            }
+        }
+
+       if (data.current_phase === "complete" && !winnerShown) {
+            winnerShown = true;
+            if (countdownInterval) clearInterval(countdownInterval);
+            countdownEl.textContent = "";
+
+            voteP1Btn.classList.remove("visible");
+            voteP2Btn.classList.remove("visible");
+
+            const winnerName = data.winner === "p1" ? "{{ p1_username }}" : "{{ p2_username }}";
+            const winnerSeat = data.winner === "p1" ? "{{ match.p1_seat }}" : "{{ match.p2_seat }}";
+            const winnerTitleEl = data.winner === "p1"
+                ? document.querySelector(".blue-side .side-title")
+                : document.querySelector(".red-side .side-title");
+            const loserSideClass = data.winner === "p1" ? "red-side" : "blue-side";
+
+            winnerTitleEl.textContent = `Seat ${winnerSeat} — ${winnerName}`;
+            winnerTitleEl.classList.add("winner-text");
+
+            document.querySelector(`.${loserSideClass}`).classList.add("loser");
+
+            statusText.textContent = "";
+
+            setTimeout(() => {
+                window.location.href = `/battle-start/${data.which_tourney}`;
+            }, 5000);
+        }
+    } catch (err) {
+        console.error("Match status poll failed:", err);
+    }
+}
+
+setInterval(pollMatchStatus, 3000);
+
+
+
 
     voteP1Btn.addEventListener("click", () => castVote("p1"));
     voteP2Btn.addEventListener("click", () => castVote("p2"));

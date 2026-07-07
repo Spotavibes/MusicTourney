@@ -1,4 +1,4 @@
-
+# app.py
 import logging
 import os
 import json
@@ -7,6 +7,7 @@ from decimal import Decimal
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 
@@ -809,7 +810,7 @@ def tournaments_page():
         tournaments = supabase_fetch(
             "tournaments",
             {
-                "select": "id,title,genre,topic,buy_in,status,current_players,started,max_players,created_at",
+                "select": "id,title,genre,topic,buy_in,status,current_players,started,max_players,created_at,champion_seat,champion_username",
                 "order": "created_at.desc",
             },
         )
@@ -1066,14 +1067,9 @@ def join_tournament(tournament_id):
 
 
 def generate_bracket(tournament_id):
-    """Randomly pair up all 8 players and write the round-1 matchups to match_history."""
-
     players = supabase_fetch(
         "tournament_players",
-        {
-            "select": "*",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        {"select": "*", "tournament_id": f"eq.{tournament_id}"},
     )
 
     shuffled = players.copy()
@@ -1082,43 +1078,39 @@ def generate_bracket(tournament_id):
     for i in range(0, len(shuffled), 2):
         p1 = shuffled[i]
         p2 = shuffled[i + 1]
+        slot = (i // 2) + 1
 
         p1_submission = supabase_fetch_one(
             "song_submissions",
-            {
-                "tournament_id": f"eq.{tournament_id}",
-                "user_id": f"eq.{p1['user_id']}",
-            },
+            {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p1['user_id']}"},
         )
         p2_submission = supabase_fetch_one(
             "song_submissions",
-            {
-                "tournament_id": f"eq.{tournament_id}",
-                "user_id": f"eq.{p2['user_id']}",
-            },
+            {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p2['user_id']}"},
         )
+
+        is_first_match = (slot == 1)
 
         supabase_post(
             "match_history",
             {
                 "which_tourney": tournament_id,
-                "which_round": 1,
+                "which_round": 4,
+                "bracket_slot": slot,
                 "player1_id": p1["user_id"],
                 "player2_id": p2["user_id"],
                 "p1_seat": p1["seat_number"],
                 "p2_seat": p2["seat_number"],
                 "p1_song": p1_submission["spotify_embed_1"] if p1_submission else None,
                 "p2_song": p2_submission["spotify_embed_1"] if p2_submission else None,
-                "p1_foreign": None,
-                "p2_foreign": None,
                 "p1_votes": 0,
                 "p2_votes": 0,
-                "current_phase": "pending",
+                # Only match 1 is live; the rest wait their turn.
+                "current_phase": "live" if is_first_match else "pending",
+                "voting_ends_at": None,
                 "processed": False,
             },
         )
-
-
 
 
 @app.route("/waiting/<tournament_id>")
@@ -1145,73 +1137,198 @@ def tournament_waiting_page(tournament_id):
         players=players,
     )
 
+def build_bracket_layout(all_matches, username_by_id):
+    """Builds a fixed 4->2->1 bracket tree. Winners of completed matches are
+    projected into their next-round slot immediately, even if the actual
+    next-round match_history row hasn't been created yet by advance_rounds()."""
+
+    BOX_W = 200
+    BOX_H = 72
+    ROW_H = 36
+    PAIR_GAP = 48
+    COL_GAP = 80
+
+    def real_match(round_, slot):
+        return next(
+            (mm for mm in all_matches if mm["which_round"] == round_ and mm["bracket_slot"] == slot),
+            None,
+        )
+
+    def display_from_real(m, label_winner=False):
+        p1_won = m["current_phase"] == "complete" and (m.get("p1_votes") or 0) >= (m.get("p2_votes") or 0)
+        p2_won = m["current_phase"] == "complete" and not p1_won
+        return {
+            "p1_username": username_by_id.get(m["player1_id"], "Unknown"),
+            "p2_username": username_by_id.get(m["player2_id"], "Unknown"),
+            "p1_seat": m["p1_seat"], "p2_seat": m["p2_seat"],
+            "p1_won": p1_won, "p2_won": p2_won,
+            "p1_label": " WINNER" if (p1_won and label_winner) else "",
+            "p2_label": " WINNER" if (p2_won and label_winner) else "",
+            "p1_filled": True, "p2_filled": True,
+            "complete": m["current_phase"] == "complete",
+        }
+
+    def empty_slot():
+        return {
+            "p1_username": "TBD", "p2_username": "TBD",
+            "p1_seat": None, "p2_seat": None,
+            "p1_won": False, "p2_won": False,
+            "p1_label": "", "p2_label": "",
+            "p1_filled": False, "p2_filled": False,
+            "complete": False,
+        }
+
+    def advanced_occupant(slot_display):
+        """Returns (seat, username) of the winner of a completed slot, or None."""
+        if not slot_display["complete"]:
+            return None
+        if slot_display["p1_won"]:
+            return slot_display["p1_seat"], slot_display["p1_username"]
+        return slot_display["p2_seat"], slot_display["p2_username"]
+
+    def project_slot(left, right):
+        """Builds a display dict for a not-yet-created next-round match,
+        filling in whichever side(s) have a known winner already."""
+        slot = empty_slot()
+        occ1 = advanced_occupant(left)
+        occ2 = advanced_occupant(right)
+        if occ1:
+            slot["p1_seat"], slot["p1_username"] = occ1
+            slot["p1_filled"] = True
+        if occ2:
+            slot["p2_seat"], slot["p2_username"] = occ2
+            slot["p2_filled"] = True
+        return slot
+
+    # Quarterfinals always exist once the bracket is generated.
+    qf = []
+    for i in range(1, 5):
+        m = real_match(4, i)
+        qf.append(display_from_real(m) if m else empty_slot())
+
+    # Semis: use the real row if the cron has created it; otherwise project
+    # from the two feeding QF matches so a winner shows up as soon as their
+    # own match ends, without waiting on their future opponent.
+    semi = []
+    for i in range(1, 3):
+        m = real_match(2, i)
+        if m:
+            semi.append(display_from_real(m))
+        else:
+            semi.append(project_slot(qf[(i - 1) * 2], qf[(i - 1) * 2 + 1]))
+
+    # Final: same idea, and this is the ONLY box that gets the "WINNER" label.
+    m = real_match(1, 1)
+    if m:
+        final = [display_from_real(m, label_winner=True)]
+    else:
+        final = [project_slot(semi[0], semi[1])]
+
+    qf_top = [i * (BOX_H + PAIR_GAP) for i in range(4)]
+    qf_center = [t + BOX_H / 2 for t in qf_top]
+
+    semi_center = [
+        (qf_center[0] + qf_center[1]) / 2,
+        (qf_center[2] + qf_center[3]) / 2,
+    ]
+    semi_top = [c - BOX_H / 2 for c in semi_center]
+
+    final_center = (semi_center[0] + semi_center[1]) / 2
+    final_top = final_center - BOX_H / 2
+
+    col_x = [40, 40 + BOX_W + COL_GAP, 40 + 2 * (BOX_W + COL_GAP)]
+
+    boxes = []
+    for i, m in enumerate(qf):
+        boxes.append({**m, "x": col_x[0], "y": qf_top[i], "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
+    for i, m in enumerate(semi):
+        boxes.append({**m, "x": col_x[1], "y": semi_top[i], "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
+    boxes.append({**final[0], "x": col_x[2], "y": final_top, "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
+
+    connectors = []
+    mid_x_1 = col_x[0] + BOX_W + COL_GAP / 2
+    for pair_idx in range(2):
+        top_c = qf_center[pair_idx * 2]
+        bot_c = qf_center[pair_idx * 2 + 1]
+        target_c = semi_center[pair_idx]
+        connectors.append({"x1": col_x[0] + BOX_W, "y1": top_c, "x2": mid_x_1, "y2": top_c})
+        connectors.append({"x1": col_x[0] + BOX_W, "y1": bot_c, "x2": mid_x_1, "y2": bot_c})
+        connectors.append({"x1": mid_x_1, "y1": top_c, "x2": mid_x_1, "y2": bot_c})
+        connectors.append({"x1": mid_x_1, "y1": target_c, "x2": col_x[1], "y2": target_c})
+
+    mid_x_2 = col_x[1] + BOX_W + COL_GAP / 2
+    connectors.append({"x1": col_x[1] + BOX_W, "y1": semi_center[0], "x2": mid_x_2, "y2": semi_center[0]})
+    connectors.append({"x1": col_x[1] + BOX_W, "y1": semi_center[1], "x2": mid_x_2, "y2": semi_center[1]})
+    connectors.append({"x1": mid_x_2, "y1": semi_center[0], "x2": mid_x_2, "y2": semi_center[1]})
+    connectors.append({"x1": mid_x_2, "y1": final_center, "x2": col_x[2], "y2": final_center})
+
+    return {
+        "boxes": boxes,
+        "connectors": connectors,
+        "width": col_x[2] + BOX_W + 40,
+        "height": qf_top[3] + BOX_H + 80,
+        "final_center": final_center,
+    }
+
 @app.route("/battle-start/<tournament_id>")
 def battle_start_page(tournament_id):
 
-    tournament = supabase_fetch_one(
-        "tournaments",
-        {
-            "id": f"eq.{tournament_id}",
-        },
-    )
+    tournament = supabase_fetch_one("tournaments", {"id": f"eq.{tournament_id}"})
 
-    matches = supabase_fetch(
+    all_matches = supabase_fetch(
         "match_history",
         {
             "select": "*",
             "which_tourney": f"eq.{tournament_id}",
-            "which_round": "eq.1",
+            "order": "which_round.asc,bracket_slot.asc",
         },
     )
 
-    # Need usernames, not just user_ids — fetch all relevant accounts
-    user_ids = []
-    for m in matches:
-        user_ids.append(m["player1_id"])
-        user_ids.append(m["player2_id"])
+    if not all_matches:
+        flash("No matches found.", "error")
+        return redirect(url_for("tournaments_page"))
 
-    # Supabase "in" filter: id=in.(id1,id2,id3)
+    # Tournament fully complete: final match (round 1) is complete.
+    final_match = next((m for m in all_matches if m["which_round"] == 1), None)
+    tournament_complete = final_match is not None and final_match["current_phase"] == "complete"
+
+    user_ids = list({m["player1_id"] for m in all_matches} | {m["player2_id"] for m in all_matches})
     ids_filter = ",".join(user_ids)
-
-    accounts = supabase_fetch(
-        "account_management",
-        {
-            "select": "id,username",
-            "id": f"in.({ids_filter})",
-        },
-    )
-
+    accounts = supabase_fetch("account_management", {"select": "id,username", "id": f"in.({ids_filter})"})
     username_by_id = {a["id"]: a["username"] for a in accounts}
 
-    bracket = []
-    for m in matches:
-        bracket.append({
-            "p1_username": username_by_id.get(m["player1_id"], "Unknown"),
-            "p1_seat": m["p1_seat"],
-            "p2_username": username_by_id.get(m["player2_id"], "Unknown"),
-            "p2_seat": m["p2_seat"],
+    bracket_layout = build_bracket_layout(all_matches, username_by_id)
+
+    champion = None
+    if tournament_complete:
+        p1_won = (final_match.get("p1_votes") or 0) >= (final_match.get("p2_votes") or 0)
+        champ_id = final_match["player1_id"] if p1_won else final_match["player2_id"]
+        champ_seat = final_match["p1_seat"] if p1_won else final_match["p2_seat"]
+        champ_acct = supabase_get_account(champ_id)
+        champion = {"seat": champ_seat, "username": champ_acct["username"] if champ_acct else "Unknown"}
+
+        supabase_patch("tournaments", tournament_id, {
+            "status": "complete",
+            "champion_seat": champ_seat,
+            "champion_username": champion["username"],
         })
 
     return render_template(
         "battle_start.html",
         tournament=tournament,
-        bracket=bracket,
+        bracket_layout=bracket_layout,
+        tournament_complete=tournament_complete,
+        champion=champion,
     )
-
-
-
 
 @app.route("/battle-game-redirect/<tournament_id>")
 def battle_game_redirect(tournament_id):
-
     matches = supabase_fetch(
         "match_history",
         {
             "select": "*",
             "which_tourney": f"eq.{tournament_id}",
-            "which_round": "eq.1",
-            "processed": "eq.false",
-            "order": "p1_seat.asc",
+            "current_phase": "eq.live",   # <-- key change: phase, not round
             "limit": "1",
         },
     )
@@ -1223,10 +1340,7 @@ def battle_game_redirect(tournament_id):
     match = matches[0]
 
     return redirect(
-        url_for(
-            "battle_game_page",
-            match_index=match["index"],
-        )
+        url_for("battle_game_page", match_index=match["index"])
     )
 
 
@@ -1236,7 +1350,6 @@ import uuid
 
 @app.route("/battle-game/<match_index>")
 def battle_game_page(match_index):
-
     try:
         uuid.UUID(match_index)
     except ValueError:
@@ -1245,14 +1358,18 @@ def battle_game_page(match_index):
 
     match = supabase_fetch_one(
         "match_history",
-        {
-            "index": f"eq.{match_index}",
-        },
+        {"index": f"eq.{match_index}"},
     )
 
     if not match:
         flash("Match not found.", "error")
         return redirect(url_for("tournaments_page"))
+
+    if match["current_phase"] != "live":
+        flash("This match isn't live right now.", "error")
+        return redirect(
+            url_for("battle_game_redirect", tournament_id=match["which_tourney"])
+        )
 
     p1_account = supabase_get_account(match["player1_id"])
     p2_account = supabase_get_account(match["player2_id"])
@@ -1267,19 +1384,20 @@ def battle_game_page(match_index):
     
 @app.route("/vote/<match_index>/<side>", methods=["POST"])
 def cast_vote(match_index, side):
-
     if side not in ("p1", "p2"):
         return jsonify({"error": "Invalid side"}), 400
 
-    match = supabase_fetch_one(
-        "match_history",
-        {
-            "index": f"eq.{match_index}",
-        },
-    )
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
 
     if not match:
         return jsonify({"error": "Match not found"}), 404
+
+    if match["current_phase"] != "voting":
+        return jsonify({"error": "Voting closed"}), 400
+
+    voting_ends_at = datetime.fromisoformat(match["voting_ends_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > voting_ends_at:
+        return jsonify({"error": "Voting window has ended"}), 400
 
     if side == "p1":
         new_votes = (match.get("p1_votes") or 0) + 1
@@ -1294,5 +1412,154 @@ def cast_vote(match_index, side):
     })
 
 
+
+@app.route("/start-voting/<match_index>", methods=["POST"])
+def start_voting(match_index):
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match or match["current_phase"] != "live":
+        return jsonify({"error": "Invalid match state"}), 400
+
+    supabase_patch("match_history", match_index, {
+        "current_phase": "voting",
+        "voting_ends_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat() + "Z",
+    }, id_column="index")
+
+    return jsonify({"status": "voting_started"})
+
+
+
+@app.route("/next-match-ready/<tournament_id>")
+def next_match_ready(tournament_id):
+    live_match = supabase_fetch(
+        "match_history",
+        {"select": "index", "which_tourney": f"eq.{tournament_id}",
+         "current_phase": "eq.live", "limit": "1"},
+    )
+    tournament = supabase_fetch_one("tournaments", {"id": f"eq.{tournament_id}"})
+    return jsonify({
+        "ready": bool(live_match),
+        "match_index": live_match[0]["index"] if live_match else None,
+        "tournament_complete": tournament.get("status") == "complete",
+    })
+
+
+@app.route("/match-status/<match_index>")
+def match_status(match_index):
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+
+    winner = None
+    if match["current_phase"] == "complete":
+        winner = "p1" if (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0) else "p2"
+
+    return jsonify({
+        "current_phase": match["current_phase"],
+        "which_tourney": match["which_tourney"],
+        "p1_votes": match.get("p1_votes") or 0,
+        "p2_votes": match.get("p2_votes") or 0,
+        "voting_ends_at": match.get("voting_ends_at"),
+        "winner": winner,
+    })
+
+
+# --------------------------------------------------
+# Dev-only testing helpers
+# --------------------------------------------------
+
+def seed_dev_tournament():
+    tournament = supabase_post("tournaments", {
+        "title": "DEV TEST",
+        "genre": "Test",
+        "topic": "Test topic",
+        "buy_in": 0,
+        "status": "active",
+        "current_players": 7,
+        "started": False,
+        "max_players": 8,
+    })
+    tournament_id = tournament[0]["id"]
+
+    for i in range(1, 8):
+        acct = supabase_post("account_management", {
+            "id": str(uuid.uuid4()),
+            "username": f"DEVPLAYER{i}",
+            "tokens": 1000,
+            "elo": 1000,
+        })[0]
+
+        supabase_post("tournament_players", {
+            "tournament_id": tournament_id,
+            "user_id": acct["id"],
+            "seat_number": i,
+        })
+        supabase_post("song_submissions", {
+            "tournament_id": tournament_id,
+            "user_id": acct["id"],
+            "spotify_embed_1": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
+            "spotify_embed_2": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
+            "spotify_embed_3": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
+            "submitted_at": datetime.utcnow().isoformat() + "Z",
+        })
+
+    logging.info("Seeded dev tournament: %s", tournament_id)
+    return tournament_id
+
+
+@app.route("/dev/seed-tournament", methods=["POST"])
+def dev_seed_tournament():
+    if not app.debug:
+        abort(404)
+    tournament_id = seed_dev_tournament()
+    return jsonify({"tournament_id": tournament_id})
+
+
+def supabase_delete_by_filter(table, query_params):
+    """Run a DELETE request against a Supabase (PostgREST) table."""
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+
+    rest_url = f"{supabase_url}/rest/v1/{table}?{urlencode(query_params)}"
+
+    req = Request(
+        rest_url,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+        },
+        method="DELETE",
+    )
+    try:
+        with urlopen(req, timeout=10) as resp:
+            resp.read()
+    except HTTPError as e:
+        logging.error("Cleanup delete failed for %s: %s", table, e.read().decode())
+
+
+def cleanup_dev_tournament():
+    logging.info("Cleaning up dev tournament data...")
+
+    dev_accounts = supabase_fetch("account_management", {
+        "select": "id",
+        "username": "like.DEVPLAYER*",
+    }) or []
+    dev_ids = [a["id"] for a in dev_accounts]
+
+    if dev_ids:
+        ids_filter = ",".join(dev_ids)
+        supabase_delete_by_filter("song_submissions", {"user_id": f"in.({ids_filter})"})
+        supabase_delete_by_filter("tournament_players", {"user_id": f"in.({ids_filter})"})
+        supabase_delete_by_filter("token_transactions", {"user_id": f"in.({ids_filter})"})
+        supabase_delete_by_filter("match_history", {"player1_id": f"in.({ids_filter})"})
+        supabase_delete_by_filter("match_history", {"player2_id": f"in.({ids_filter})"})
+        supabase_delete_by_filter("account_management", {"id": f"in.({ids_filter})"})
+
+    supabase_delete_by_filter("tournaments", {"title": "eq.DEV TEST"})
+
+    logging.info("Dev tournament cleanup complete.")
+
+
 if __name__ == "__main__":
+    import atexit
+    atexit.register(cleanup_dev_tournament)
     app.run(debug=True)

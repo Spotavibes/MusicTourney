@@ -1,3 +1,5 @@
+<!-- battle_start.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -17,15 +19,14 @@
         .bracket-svg {
             display: block;
             margin: 0 auto;
-            min-width: 760px;
         }
 
         .seat-text {
             font-family: inherit;
-            font-size: 16px;
+            font-size: 15px;
             opacity: 0;
             transform: translateX(-20px);
-            transition: opacity 0.6s ease, transform 0.6s ease;
+            transition: opacity 0.6s ease, transform 0.6s ease, fill 0.4s ease, font-size 0.4s ease;
         }
 
         .seat-text.revealed {
@@ -46,9 +47,21 @@
             100% { transform: translateX(0); }
         }
 
-        .champion-label {
+        .seat-text.winner-seat {
+            fill: gold;
             font-weight: bold;
             font-size: 16px;
+        }
+
+        .seat-text.tbd-seat {
+            fill: #555;
+        }
+
+        .champion-banner {
+            fill: gold;
+            font-weight: bold;
+            font-size: 22px;
+            text-anchor: middle;
         }
 
         .bracket-line {
@@ -62,6 +75,11 @@
             stroke-width: 2;
             fill: none;
         }
+
+        .seat-box.tbd-box {
+            stroke: #222;
+            stroke-dasharray: 4 4;
+        }
     </style>
 </head>
 
@@ -71,78 +89,146 @@
 
     <div class="page-header">
         <h1>{{ tournament.title }}</h1>
+        {% if tournament_complete %}
+        <p>Tournament Complete</p>
+        {% else %}
         <p>The Bracket</p>
+        {% endif %}
     </div>
 
     <div class="bracket-wrapper">
 
         <svg
             class="bracket-svg"
-            viewBox="0 0 800 420"
+            viewBox="0 0 {{ bracket_layout.width }} {{ bracket_layout.height + (60 if tournament_complete and champion else 0) }}"
             xmlns="http://www.w3.org/2000/svg"
         >
 
-            {# ---- Match boxes (8 seats, 4 matches) ---- #}
-            {% for match in bracket %}
+            {% for line in bracket_layout.connectors %}
+            <path class="bracket-line" d="M {{ line.x1 }} {{ line.y1 }} L {{ line.x2 }} {{ line.y2 }}"></path>
+            {% endfor %}
 
-            {% set match_y = 20 + loop.index0 * 100 %}
+            {% for box in bracket_layout.boxes %}
 
-            <rect class="seat-box" x="20" y="{{ match_y }}" width="180" height="36"></rect>
-            <text class="seat-text scrambling" data-seat="p1-{{ loop.index0 }}" x="30" y="{{ match_y + 24 }}">
-                {{ match.p1_seat }}. {{ match.p1_username }}
+           <rect class="seat-box {% if not box.p1_filled %}tbd-box{% endif %}"
+                x="{{ box.x }}"
+                y="{{ box.y }}"
+                width="{{ box.w }}"
+                height="{{ box.row_h }}">
+            </rect>
+
+            <text class="seat-text scrambling
+                        {% if box.p1_won %}winner-seat{% endif %}
+                        {% if not box.p1_filled %}tbd-seat{% endif %}"
+                x="{{ box.x + 10 }}"
+                y="{{ box.y + 24 }}">
+
+                {% if box.p1_filled %}
+                    {{ box.p1_seat }}. {{ box.p1_username }}{{ box.p1_label }}
+                {% else %}
+                    TBD
+                {% endif %}
+
             </text>
 
-            <rect class="seat-box" x="20" y="{{ match_y + 36 }}" width="180" height="36"></rect>
-            <text class="seat-text scrambling" data-seat="p2-{{ loop.index0 }}" x="30" y="{{ match_y + 60 }}">
-                {{ match.p2_seat }}. {{ match.p2_username }}
-            </text>
+            <rect class="seat-box {% if not box.p2_filled %}tbd-box{% endif %}"
+                x="{{ box.x }}"
+                y="{{ box.y + box.row_h }}"
+                width="{{ box.w }}"
+                height="{{ box.row_h }}">
+            </rect>
 
-            {# connector from this match box out to the right #}
-            <path
-                class="bracket-line"
-                d="M 200 {{ match_y + 36 }} H 240"
-            ></path>
+            <text class="seat-text scrambling
+                        {% if box.p2_won %}winner-seat{% endif %}
+                        {% if not box.p2_filled %}tbd-seat{% endif %}"
+                x="{{ box.x + 10 }}"
+                y="{{ box.y + box.row_h + 24 }}">
+
+                {% if box.p2_filled %}
+                    {{ box.p2_seat }}. {{ box.p2_username }}{{ box.p2_label }}
+                {% else %}
+                    TBD
+                {% endif %}
+
+            </text>
 
             {% endfor %}
 
-            {# ---- Round 1 -> Round 2 connectors (pairs of matches merge) ---- #}
-            {# Match 0 + Match 1 merge #}
-            <path class="bracket-line" d="M 240 56 V 156" />
-            <path class="bracket-line" d="M 240 106 H 360" />
-
-            {# Match 2 + Match 3 merge #}
-            <path class="bracket-line" d="M 240 256 V 356" />
-            <path class="bracket-line" d="M 240 306 H 360" />
-
-            {# ---- Round 2 -> Champion connector ---- #}
-            <path class="bracket-line" d="M 360 106 V 306" />
-            <path class="bracket-line" d="M 360 206 H 560" />
-
-            {# ---- Champion line + label ---- #}
-            <text class="champion-label" x="580" y="212">Champion</text>
+            {% if tournament_complete and champion %}
+            <text class="champion-banner" x="{{ bracket_layout.width / 2 }}" y="{{ bracket_layout.height + 30 }}">
+                Seat {{ champion.seat }} — {{ champion.username }} WINNER
+            </text>
+            {% endif %}
 
         </svg>
 
     </div>
 
 </section>
+
 <script>
+    const tourneyId = "{{ tournament.id }}";
+    const scrambleKey = `auxwars_scrambled_${tourneyId}`;
+    const alreadyScrambled = sessionStorage.getItem(scrambleKey) === "true";
+
     const seatLabels = document.querySelectorAll(".seat-text");
 
     seatLabels.forEach((label, index) => {
-        setTimeout(() => {
+        if (alreadyScrambled) {
             label.classList.add("revealed");
-        }, 300 + index * 150);
-
-        setTimeout(() => {
             label.classList.remove("scrambling");
-        }, 1500 + index * 150);
+        } else {
+            setTimeout(() => {
+                label.classList.add("revealed");
+            }, 300 + index * 100);
+
+            setTimeout(() => {
+                label.classList.remove("scrambling");
+            }, 1500 + index * 100);
+        }
     });
 
-    // After 3 seconds, send everyone to the first match of round 1.
+    if (!alreadyScrambled) {
+        sessionStorage.setItem(scrambleKey, "true");
+    }
+
+    {% if tournament_complete %}
     setTimeout(() => {
-        window.location.href = "{{ url_for('battle_game_redirect', tournament_id=tournament.id) }}";
-    }, 3000);
+        window.location.href = "{{ url_for('tournaments_page') }}";
+    }, 4000);
+    {% else %}
+    let minDisplayElapsed = false;
+    let readyMatchIndex = null;
+    let redirected = false;
+
+    setTimeout(() => {
+        minDisplayElapsed = true;
+        tryRedirect();
+    }, 5000);
+
+    const pollReady = setInterval(async () => {
+        if (redirected) return;
+        try {
+            const resp = await fetch(`/next-match-ready/${tourneyId}`);
+            const data = await resp.json();
+            if (data.ready) {
+                readyMatchIndex = data.match_index;
+                tryRedirect();
+            }
+        } catch (err) {
+            console.error("Polling failed:", err);
+        }
+    }, 2000);
+
+    function tryRedirect() {
+        if (redirected) return;
+        if (minDisplayElapsed && readyMatchIndex) {
+            redirected = true;
+            clearInterval(pollReady);
+            window.location.href = `/battle-game/${readyMatchIndex}`;
+        }
+    }
+    {% endif %}
 </script>
 
 </body>
