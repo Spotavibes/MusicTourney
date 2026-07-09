@@ -12,37 +12,35 @@
 
 <body>
 
-<section class="page-section">
-
-    <div class="page-header">
-        <h1>{{ tournament.title }}</h1>
-
-        <p>{{ tournament.topic }}</p>
-    </div>
-
-    <div class="buyin-card">
-
-        <h2>
-            Buy In
-        </h2>
-
-        <div class="buyin-amount">
-            {{ tournament.buy_in }} Tokens
+<section class="page-section accept-page">
+    <div class="accept-shell">
+        <div class="page-header accept-header">
+            <span class="kicker">Battle Invite</span>
+            <h1>{{ tournament.title }}</h1>
+            <p>{{ tournament.topic }}</p>
         </div>
 
-        <form
-            method="POST"
-            action="{{ url_for('join_tournament', tournament_id=tournament.id) }}"
-        >
+        <div class="buyin-card">
+            <h2>Buy In</h2>
 
-            <button class="primary-btn">
-                ACCEPT & JOIN
-            </button>
+            <div class="buyin-amount">
+                {{ tournament.buy_in }} Tokens
+            </div>
 
-        </form>
+            <p class="buyin-copy">
+                Join this tournament and lock in your spot for the upcoming battle.
+            </p>
 
+            <form
+                method="POST"
+                action="{{ url_for('join_tournament', tournament_id=tournament.id) }}"
+            >
+                <button class="primary-btn">
+                    ACCEPT & JOIN
+                </button>
+            </form>
+        </div>
     </div>
-
 </section>
 
 </body>

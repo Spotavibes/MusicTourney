@@ -12,28 +12,28 @@
 
 <body>
 
-<section class="page-section">
-
-    <div class="page-header">
-        <h1>Waiting Room</h1>
-
-        <p id="player-count">
-            {{ tournament.current_players }}/8 Players Joined
-        </p>
-    </div>
-
-    <div class="player-list" id="player-list">
-
-        {% for player in players %}
-
-        <div class="player-card">
-            Seat {{ player.seat_number }}
+<section class="page-section waiting-page">
+    <div class="waiting-shell">
+        <div class="page-header waiting-header">
+            <span class="kicker">Lobby</span>
+            <h1>Waiting Room</h1>
+            <p id="player-count">
+                {{ tournament.current_players }}/8 Players Joined
+            </p>
         </div>
 
-        {% endfor %}
+        <div class="waiting-card">
+            <p class="waiting-copy">Players are joining now. The bracket opens automatically when all seats are filled.</p>
 
+            <div class="player-list waiting-grid" id="player-list">
+                {% for player in players %}
+                <div class="player-card waiting-seat">
+                    Seat {{ player.seat_number }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
-
 </section>
 
 <script>
@@ -52,7 +52,7 @@
 
             data.players.forEach(player => {
                 const div = document.createElement("div");
-                div.className = "player-card";
+                div.className = "player-card waiting-seat";
                 div.textContent = `Seat ${player.seat_number}`;
                 list.appendChild(div);
             });

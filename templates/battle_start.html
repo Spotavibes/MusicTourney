@@ -8,91 +8,19 @@
     <title>Battle Start</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-    <style>
-        .bracket-wrapper {
-            width: 100%;
-            overflow-x: auto;
-            padding: 20px 0;
-        }
-
-        .bracket-svg {
-            display: block;
-            margin: 0 auto;
-        }
-
-        .seat-text {
-            font-family: inherit;
-            font-size: 15px;
-            opacity: 0;
-            transform: translateX(-20px);
-            transition: opacity 0.6s ease, transform 0.6s ease, fill 0.4s ease, font-size 0.4s ease;
-        }
-
-        .seat-text.revealed {
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        .seat-text.scrambling {
-            animation: scramble 1.2s ease-in-out;
-        }
-
-        @keyframes scramble {
-            0%   { transform: translateX(0); }
-            20%  { transform: translateX(15px); }
-            40%  { transform: translateX(-12px); }
-            60%  { transform: translateX(8px); }
-            80%  { transform: translateX(-5px); }
-            100% { transform: translateX(0); }
-        }
-
-        .seat-text.winner-seat {
-            fill: gold;
-            font-weight: bold;
-            font-size: 16px;
-        }
-
-        .seat-text.tbd-seat {
-            fill: #555;
-        }
-
-        .champion-banner {
-            fill: gold;
-            font-weight: bold;
-            font-size: 22px;
-            text-anchor: middle;
-        }
-
-        .bracket-line {
-            stroke: #333;
-            stroke-width: 2;
-            fill: none;
-        }
-
-        .seat-box {
-            stroke: #333;
-            stroke-width: 2;
-            fill: none;
-        }
-
-        .seat-box.tbd-box {
-            stroke: #222;
-            stroke-dasharray: 4 4;
-        }
-    </style>
 </head>
 
 <body>
 
-<section class="page-section">
-
-    <div class="page-header">
+<section class="page-section battle-start-page">
+    <div class="battle-start-shell">
+    <div class="page-header battle-start-header">
+        <span class="kicker">Tournament Bracket</span>
         <h1>{{ tournament.title }}</h1>
         {% if tournament_complete %}
-        <p>Tournament Complete</p>
+        <p>Final results are in.</p>
         {% else %}
-        <p>The Bracket</p>
+        <p>The bracket is live.</p>
         {% endif %}
     </div>
 
@@ -163,7 +91,7 @@
         </svg>
 
     </div>
-
+    </div>
 </section>
 
 <script>
