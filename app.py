@@ -1510,7 +1510,11 @@ def seed_dev_tournament():
 def dev_seed_tournament():
     if not app.debug:
         abort(404)
+
+    cleanup_dev_tournament()
+
     tournament_id = seed_dev_tournament()
+
     return jsonify({"tournament_id": tournament_id})
 
 
@@ -1537,29 +1541,44 @@ def supabase_delete_by_filter(table, query_params):
 
 
 def cleanup_dev_tournament():
-    logging.info("Cleaning up dev tournament data...")
+    logging.info("Cleaning old dev tournament...")
 
-    dev_accounts = supabase_fetch("account_management", {
-        "select": "id",
-        "username": "like.DEVPLAYER*",
-    }) or []
-    dev_ids = [a["id"] for a in dev_accounts]
+    tournament = supabase_fetch_one(
+        "tournaments",
+        {
+            "title": "eq.DEV TEST",
+        }
+    )
 
-    if dev_ids:
-        ids_filter = ",".join(dev_ids)
-        supabase_delete_by_filter("song_submissions", {"user_id": f"in.({ids_filter})"})
-        supabase_delete_by_filter("tournament_players", {"user_id": f"in.({ids_filter})"})
-        supabase_delete_by_filter("token_transactions", {"user_id": f"in.({ids_filter})"})
-        supabase_delete_by_filter("match_history", {"player1_id": f"in.({ids_filter})"})
-        supabase_delete_by_filter("match_history", {"player2_id": f"in.({ids_filter})"})
-        supabase_delete_by_filter("account_management", {"id": f"in.({ids_filter})"})
+    if tournament:
+        tid = tournament["id"]
 
-    supabase_delete_by_filter("tournaments", {"title": "eq.DEV TEST"})
+        supabase_delete_by_filter(
+            "match_history",
+            {"which_tourney": f"eq.{tid}"}
+        )
 
-    logging.info("Dev tournament cleanup complete.")
+        supabase_delete_by_filter(
+            "song_submissions",
+            {"tournament_id": f"eq.{tid}"}
+        )
 
+        supabase_delete_by_filter(
+            "tournament_players",
+            {"tournament_id": f"eq.{tid}"}
+        )
+
+        supabase_delete_by_filter(
+            "tournaments",
+            {"id": f"eq.{tid}"}
+        )
+
+    supabase_delete_by_filter(
+        "account_management",
+        {"username": "like.DEVPLAYER%"}
+    )
+
+    logging.info("Cleanup complete.")
 
 if __name__ == "__main__":
-    import atexit
-    atexit.register(cleanup_dev_tournament)
     app.run(debug=True)
