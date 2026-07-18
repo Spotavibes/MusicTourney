@@ -8,6 +8,107 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .flash-list {
+            max-width: 760px;
+            margin: 0 0 24px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .flash {
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .flash.success {
+            border-color: rgba(30, 215, 96, 0.4);
+            color: var(--green);
+            background: rgba(30, 215, 96, 0.08);
+        }
+
+        .flash.error {
+            border-color: rgba(255, 79, 109, 0.4);
+            color: #ff6b8a;
+            background: rgba(255, 79, 109, 0.08);
+        }
+
+        .profile-edit-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 28px;
+            overflow: hidden;
+            margin-bottom: 32px;
+            max-width: 760px;
+        }
+
+        .profile-edit-banner {
+            height: 160px;
+            background: #1a1a1a center/cover no-repeat;
+        }
+
+        .profile-edit-banner.empty {
+            background: linear-gradient(135deg, #1a1a1a, #2b2b2b);
+        }
+
+        .profile-edit-body {
+            padding: 0 24px 28px;
+            margin-top: -48px;
+        }
+
+        .profile-edit-avatar {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid #121212;
+            background: #2a2a2a;
+            display: block;
+        }
+
+        .profile-edit-avatar.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: 800;
+            color: rgba(255,255,255,0.45);
+        }
+
+        .profile-edit-username {
+            margin-top: 14px;
+            font-size: 1.4rem;
+            font-weight: 800;
+        }
+
+        .profile-edit-form {
+            margin-top: 22px;
+            display: grid;
+            gap: 16px;
+        }
+
+        .profile-edit-form label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 700;
+            opacity: 0.9;
+        }
+
+        .profile-edit-form input[type="file"] {
+            width: 100%;
+            color: rgba(255,255,255,0.85);
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 12px;
+        }
+
+        .profile-edit-form .primary-btn {
+            width: fit-content;
+        }
+    </style>
 </head>
 
 <body>
@@ -31,6 +132,66 @@
         <div class="page-header">
             <h1>Dashboard</h1>
             <p>Look at Previous Token History</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-list">
+            {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <div class="profile-edit-card">
+            {% if profile and profile.banner_url %}
+            <div class="profile-edit-banner" style="background-image: url('{{ profile.banner_url }}');"></div>
+            {% else %}
+            <div class="profile-edit-banner empty"></div>
+            {% endif %}
+
+            <div class="profile-edit-body">
+                {% set display_name = (profile.username if profile and profile.username else user.username) or 'Your Profile' %}
+                {% if profile and profile.avatar_url %}
+                <img
+                    class="profile-edit-avatar"
+                    src="{{ profile.avatar_url }}"
+                    alt="{{ display_name }}"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                >
+                <div class="profile-edit-avatar placeholder" style="display:none;">
+                    {{ display_name[:1]|upper }}
+                </div>
+                {% else %}
+                <div class="profile-edit-avatar placeholder">
+                    {{ display_name[:1]|upper }}
+                </div>
+                {% endif %}
+
+                <div class="profile-edit-username">
+                    {{ display_name }}
+                </div>
+
+                <form
+                    class="profile-edit-form"
+                    method="POST"
+                    action="{{ url_for('update_profile_media') }}"
+                    enctype="multipart/form-data"
+                >
+                    <div>
+                        <label for="avatar">Profile picture</label>
+                        <input id="avatar" type="file" name="avatar" accept="image/png,image/jpeg,image/gif,image/webp">
+                    </div>
+
+                    <div>
+                        <label for="banner">Banner</label>
+                        <input id="banner" type="file" name="banner" accept="image/png,image/jpeg,image/gif,image/webp">
+                    </div>
+
+                    <button type="submit" class="primary-btn">Save Profile Media</button>
+                </form>
+            </div>
         </div>
 
         <div class="balance-card">

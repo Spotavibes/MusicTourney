@@ -328,6 +328,272 @@ def supabase_get_account(user_id):
     return rows[0] if rows else None
 
 
+def profile_media_url(path_or_url, bucket):
+    """Turn a storage path into a public Supabase URL, or pass through full URLs."""
+    object_path = extract_storage_object_path(path_or_url, bucket)
+    if not object_path:
+        return None
+    # Prefer signed URLs because these buckets are private.
+    signed = supabase_create_signed_url(bucket, object_path)
+    if signed:
+        return signed
+    base = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    if not base:
+        return None
+    return f"{base}/storage/v1/object/public/{bucket}/{object_path.lstrip('/')}"
+
+
+def extract_storage_object_path(path_or_url, bucket):
+    """Normalize DB values into `{user_id}/avatar.png` style object paths."""
+    if not path_or_url:
+        return None
+    value = str(path_or_url).strip()
+    if not value or value.lower() == "none":
+        return None
+
+    # Strip query string (e.g. ?t=...)
+    value = value.split("?", 1)[0]
+
+    marker = f"/storage/v1/object/public/{bucket}/"
+    if marker in value:
+        return value.split(marker, 1)[1].lstrip("/")
+
+    marker_auth = f"/storage/v1/object/authenticated/{bucket}/"
+    if marker_auth in value:
+        return value.split(marker_auth, 1)[1].lstrip("/")
+
+    marker_sign = f"/storage/v1/object/sign/{bucket}/"
+    if marker_sign in value:
+        return value.split(marker_sign, 1)[1].lstrip("/")
+
+    if value.startswith("http"):
+        # Unknown absolute URL — can't safely convert.
+        return None
+
+    # Already a relative object path
+    return value.lstrip("/")
+
+
+def supabase_create_signed_url(bucket, object_path, expires_in=60 * 60 * 24 * 7):
+    """Create a temporary signed download URL for a private storage object."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key or not object_path:
+        return None
+
+    rest_url = f"{supabase_url}/storage/v1/object/sign/{bucket}/{object_path.lstrip('/')}"
+    body = json.dumps({"expiresIn": expires_in}).encode("utf-8")
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        signed = payload.get("signedURL") or payload.get("signedUrl")
+        if not signed:
+            return None
+        if signed.startswith("http"):
+            return signed
+        return f"{supabase_url}/storage/v1{signed}"
+    except Exception as e:
+        logging.warning("Signed URL failed for %s/%s: %s", bucket, object_path, e)
+        return None
+
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def supabase_storage_upload(bucket, object_path, data_bytes, content_type):
+    """Upload (or overwrite) a file in a Supabase Storage bucket."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
+
+    rest_url = f"{supabase_url}/storage/v1/object/{bucket}/{object_path.lstrip('/')}"
+
+    req = Request(
+        rest_url,
+        data=data_bytes,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": content_type or "application/octet-stream",
+            "x-upsert": "true",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {"Key": object_path}
+    except HTTPError as e:
+        # Some projects reject POST upsert; retry with PUT.
+        if e.code in (400, 409):
+            put_req = Request(
+                rest_url,
+                data=data_bytes,
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": content_type or "application/octet-stream",
+                    "x-upsert": "true",
+                },
+                method="PUT",
+            )
+            with urlopen(put_req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body) if body else {"Key": object_path}
+        print("FAILED STORAGE URL:", rest_url, flush=True)
+        print("STATUS:", e.code, flush=True)
+        print("BODY:", e.read().decode(), flush=True)
+        raise
+
+
+def supabase_storage_list(bucket, prefix):
+    """List objects under a prefix in a storage bucket."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        return []
+
+    rest_url = f"{supabase_url}/storage/v1/object/list/{bucket}"
+    body = json.dumps({
+        "prefix": prefix.rstrip("/") + "/",
+        "limit": 100,
+    }).encode("utf-8")
+
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logging.warning("Storage list failed for %s/%s: %s", bucket, prefix, e)
+        return []
+
+
+def find_profile_object_path(user_id, bucket, stem):
+    """
+    Find `{user_id}/{stem}.*` in a bucket.
+    Matches the upload layout: uuid/avatar.png , uuid/banner.png
+    """
+    objects = supabase_storage_list(bucket, user_id)
+    candidates = []
+    for obj in objects:
+        name = (obj.get("name") or "").lstrip("/")
+        # API may return just the filename inside the prefix folder.
+        filename = name.split("/")[-1]
+        lower = filename.lower()
+        if lower.startswith(stem.lower() + "."):
+            candidates.append(f"{user_id}/{filename}")
+    if not candidates:
+        # Fallback to the conventional png path used by uploads.
+        return f"{user_id}/{stem}.png"
+    # Prefer exact stem.png, then newest-looking name.
+    for preferred_ext in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        match = next((p for p in candidates if p.lower().endswith(preferred_ext)), None)
+        if match:
+            return match
+    return candidates[0]
+
+
+def get_or_create_profile(user):
+    """Return the profiles row for this user, creating one if needed."""
+    profile = supabase_fetch_one(
+        "profiles",
+        {"select": "*", "id": f"eq.{user['id']}"},
+    )
+    username = (
+        user.get("username")
+        or user.get("name")
+        or user.get("display_name")
+        or "Unknown"
+    )
+    if profile:
+        # Keep username in sync when we know the real account name.
+        if username != "Unknown" and profile.get("username") in (None, "", "Unknown"):
+            try:
+                supabase_patch("profiles", profile["id"], {"username": username})
+                profile["username"] = username
+            except Exception:
+                pass
+        return profile
+
+    created = supabase_post(
+        "profiles",
+        {
+            "id": user["id"],
+            "username": username,
+            "description": "",
+            "avatar_url": None,
+            "banner_url": None,
+        },
+    )
+    if isinstance(created, list) and created:
+        return created[0]
+    return created
+
+
+def resolve_profile_for_display(profile):
+    if not profile:
+        return None
+    display = dict(profile)
+    user_id = profile.get("id")
+
+    avatar_path = extract_storage_object_path(
+        profile.get("avatar_url"), "profile_pictures"
+    )
+    banner_path = extract_storage_object_path(
+        profile.get("banner_url"), "profile_banners"
+    )
+
+    if not avatar_path and user_id:
+        avatar_path = find_profile_object_path(user_id, "profile_pictures", "avatar")
+    if not banner_path and user_id:
+        banner_path = find_profile_object_path(user_id, "profile_banners", "banner")
+
+    display["avatar_url"] = profile_media_url(avatar_path, "profile_pictures")
+    display["banner_url"] = profile_media_url(banner_path, "profile_banners")
+    return display
+
+
+@app.route("/all-profiles")
+def all_profiles_page():
+    try:
+        profiles = supabase_fetch(
+            "profiles",
+            {
+                "select": "id,username,description,avatar_url,banner_url",
+                "order": "username.asc",
+            },
+        )
+    except Exception as e:
+        logging.exception("Failed fetching profiles: %s", e)
+        profiles = []
+        flash("Unable to load profiles right now.", "error")
+
+    profiles = [resolve_profile_for_display(p) for p in profiles]
+    return render_template("all_profiles.html", profiles=profiles)
+
+
 
 
 def fetch_supabase_leaderboard(limit: int = 20):
@@ -473,11 +739,88 @@ def dashboard_page():
         },
     )
 
+    profile = None
+    try:
+        profile = resolve_profile_for_display(get_or_create_profile(user))
+    except Exception as e:
+        logging.exception("Failed loading profile for dashboard: %s", e)
+
     return render_template(
         "dashboard.html",
         user=user,
         transactions=transactions,
+        profile=profile,
     )
+
+
+@app.route("/dashboard/update-profile-media", methods=["POST"])
+def update_profile_media():
+    if not session.get("user_id"):
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    user = get_current_user()
+    if not user:
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    avatar_file = request.files.get("avatar")
+    banner_file = request.files.get("banner")
+
+    has_avatar = avatar_file and avatar_file.filename
+    has_banner = banner_file and banner_file.filename
+
+    if not has_avatar and not has_banner:
+        flash("Choose a profile picture and/or banner to upload.", "error")
+        return redirect(url_for("dashboard_page"))
+
+    try:
+        profile = get_or_create_profile(user)
+        updates = {}
+
+        def upload_image(file_storage, bucket, field_name, prefix):
+            filename = file_storage.filename or ""
+            _, ext = os.path.splitext(filename.lower())
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise ValueError("Only JPG, PNG, GIF, or WEBP images are allowed.")
+
+            # Matches bucket layout: {user_id}/avatar.png or {user_id}/banner.png
+            object_path = f"{user['id']}/{prefix}{ext}"
+            data = file_storage.read()
+            if not data:
+                raise ValueError(f"{field_name} file was empty.")
+
+            content_type = file_storage.mimetype or "application/octet-stream"
+            supabase_storage_upload(bucket, object_path, data, content_type)
+
+            # Store the relative object path; display code builds the public URL.
+            return object_path
+
+        if has_avatar:
+            updates["avatar_url"] = upload_image(
+                avatar_file, "profile_pictures", "avatar", "avatar"
+            )
+
+        if has_banner:
+            updates["banner_url"] = upload_image(
+                banner_file, "profile_banners", "banner", "banner"
+            )
+
+        if updates:
+            patched = supabase_patch("profiles", profile["id"], updates)
+            if not patched:
+                raise RuntimeError(
+                    "Storage upload succeeded, but profiles row was not updated. "
+                    "Check RLS policies on the profiles table."
+                )
+            flash("Profile media updated.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        logging.exception("Profile media upload failed: %s", e)
+        flash("Could not upload profile media. Check storage/RLS permissions.", "error")
+
+    return redirect(url_for("dashboard_page"))
 
 
 @app.route("/battles")
@@ -954,6 +1297,45 @@ def battle_accept_page(tournament_id):
 
 from flask import jsonify
 
+def enrich_waiting_players(players):
+    """Attach profile username/avatar/banner to tournament_players rows."""
+    if not players:
+        return []
+
+    user_ids = [p["user_id"] for p in players if p.get("user_id")]
+    profiles_by_id = {}
+
+    if user_ids:
+        ids_filter = ",".join(user_ids)
+        try:
+            profiles = supabase_fetch(
+                "profiles",
+                {
+                    "select": "id,username,description,avatar_url,banner_url",
+                    "id": f"in.({ids_filter})",
+                },
+            )
+            for profile in profiles:
+                resolved = resolve_profile_for_display(profile)
+                if resolved:
+                    profiles_by_id[resolved["id"]] = resolved
+        except Exception as e:
+            logging.exception("Failed enriching waiting-room profiles: %s", e)
+
+    enriched = []
+    for player in sorted(players, key=lambda p: p.get("seat_number") or 0):
+        profile = profiles_by_id.get(player.get("user_id"), {})
+        enriched.append({
+            "seat_number": player.get("seat_number"),
+            "user_id": player.get("user_id"),
+            "username": profile.get("username") or "Unknown",
+            "description": profile.get("description") or "",
+            "avatar_url": profile.get("avatar_url"),
+            "banner_url": profile.get("banner_url"),
+        })
+    return enriched
+
+
 @app.route("/tournament-status/<tournament_id>")
 def tournament_status(tournament_id):
 
@@ -975,7 +1357,7 @@ def tournament_status(tournament_id):
     return jsonify({
         "current_players": tournament["current_players"],
         "started": tournament["started"],
-        "players": players,
+        "players": enrich_waiting_players(players),
     })
 
 
@@ -1134,7 +1516,7 @@ def tournament_waiting_page(tournament_id):
     return render_template(
         "tournament_waiting.html",
         tournament=tournament,
-        players=players,
+        players=enrich_waiting_players(players),
     )
 
 def build_bracket_layout(all_matches, username_by_id):

@@ -1195,8 +1195,68 @@ body {
 
 .waiting-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.waiting-profile-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+}
+
+.waiting-profile-card:hover {
+    border-color: rgba(30, 215, 96, 0.6);
+    transform: translateY(-2px);
+}
+
+.waiting-profile-card .profile-banner {
+    height: 110px;
+    background: #1a1a1a center/cover no-repeat;
+}
+
+.waiting-profile-card .profile-banner.empty {
+    background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+}
+
+.waiting-profile-card .profile-body {
+    padding: 0 16px 18px;
+    margin-top: -36px;
+    text-align: center;
+}
+
+.waiting-profile-card .profile-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #121212;
+    background: #2a2a2a;
+    display: block;
+    margin: 0 auto 12px;
+}
+
+.waiting-profile-card .profile-avatar.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.4);
+    font-weight: 700;
+    font-size: 1.4rem;
+}
+
+.waiting-profile-card .profile-username {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+}
+
+.waiting-seat-label {
+    opacity: 0.65;
+    font-size: 0.9rem;
+    font-weight: 600;
 }
 
 .waiting-seat {
