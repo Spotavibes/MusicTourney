@@ -10,6 +10,25 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
     <style>
+        .token-payout-notification {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 30px;
+    font-weight: 900;
+    color: gold;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.9), 0 0 40px rgba(255, 215, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.token-payout-notification.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
         .battle-arena {
             display: flex;
             min-height: 100vh;
@@ -136,11 +155,6 @@
             opacity: 0.85;
         }
 
-        .winner-highlight {
-                outline: 4px solid gold;
-                box-shadow: 0 0 30px gold;
-            }
-
         .countdown-timer {
             margin-top: 12px;
             font-size: 28px;
@@ -173,6 +187,7 @@
 <div class="countdown-timer" id="countdown-timer"></div>
 
 <div class="battle-arena">
+    <div class="token-payout-notification" id="token-payout-notification"></div>
 
     <div class="side blue-side">
         <div class="side-title">Seat {{ match.p1_seat }} — {{ p1_username }}</div>
@@ -219,6 +234,7 @@
 <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
 
 <script>
+    const tokenPayoutEl = document.getElementById("token-payout-notification");
     const matchIndex = "{{ match.index }}";
 
     const statusText = document.getElementById("status-text");
@@ -381,7 +397,7 @@
     const countdownEl = document.getElementById("countdown-timer");
     let countdownInterval = null;
 
-async function pollMatchStatus() {
+    async function pollMatchStatus() {
     try {
         const resp = await fetch(`/match-status/${matchIndex}`);
         const data = await resp.json();
@@ -407,7 +423,7 @@ async function pollMatchStatus() {
             }
         }
 
-       if (data.current_phase === "complete" && !winnerShown) {
+        if (data.current_phase === "complete" && !winnerShown) {
             winnerShown = true;
             if (countdownInterval) clearInterval(countdownInterval);
             countdownEl.textContent = "";
@@ -420,12 +436,19 @@ async function pollMatchStatus() {
             const winnerTitleEl = data.winner === "p1"
                 ? document.querySelector(".blue-side .side-title")
                 : document.querySelector(".red-side .side-title");
+            const winnerSideEl = data.winner === "p1"
+                ? document.querySelector(".blue-side")
+                : document.querySelector(".red-side");
             const loserSideClass = data.winner === "p1" ? "red-side" : "blue-side";
 
             winnerTitleEl.textContent = `Seat ${winnerSeat} — ${winnerName}`;
             winnerTitleEl.classList.add("winner-text");
 
             document.querySelector(`.${loserSideClass}`).classList.add("loser");
+
+            // Show the "+N tokens" payout notification
+            tokenPayoutEl.textContent = `+${data.tokens_awarded} tokens`;
+            tokenPayoutEl.classList.add("visible");
 
             statusText.textContent = "";
 

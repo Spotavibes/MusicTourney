@@ -47,9 +47,7 @@ if not stripe.api_key:
 if not STRIPE_WEBHOOK_SECRET:
     logging.warning("STRIPE_WEBHOOK_SECRET is not configured. Webhook verification will fail.")
 
-# --------------------------------------------------
-# Database setup
-# --------------------------------------------------
+
 
 
 # --------------------------------------------------
@@ -74,8 +72,16 @@ TOKEN_PACKAGES = {
 }
 
 # --------------------------------------------------
-# Models
+# Round-based token payouts (awarded to the winner of each match)
 # --------------------------------------------------
+
+#change this to the amount you want the payout to be for each round
+#right now all of them are at 0 until me and aadi decide the payout amt values
+ROUND_TOKEN_PAYOUTS = {
+    4: 25,  # which_round 4 = First Round (8 players). Change this 0 to the actual value for the "first" round token payout
+    2: 50,  # which_round 2 = Second Round (4 players). Change this 0 to the actual value for the "second" round token payout
+    1: 100,  # which_round 1 = Third/Final Round (1v1). Change this 0 to the actual value for the "third" round token payout
+}
 
 
 
@@ -147,7 +153,24 @@ mock_leaderboard_players = [
 # Supabase helpers
 # --------------------------------------------------
 
+def parse_supabase_timestamp(ts_string):
+    """Parses a Supabase/Postgres timestamp string into an aware datetime.
+    Supabase sometimes returns fractional seconds with a non-standard number
+    of digits (e.g. 4 digits), which datetime.fromisoformat() can choke on.
+    This pads/truncates the fractional part to exactly 6 digits (microseconds)
+    before parsing."""
 
+    ts_string = ts_string.replace("Z", "+00:00")
+
+    match = re.match(r"^(.*?)(\.\d+)?([+-]\d{2}:\d{2})$", ts_string)
+    if match:
+        base, frac, offset = match.groups()
+        if frac:
+            digits = frac[1:]  # strip leading "."
+            digits = (digits + "000000")[:6]  # pad/truncate to 6 digits
+            ts_string = f"{base}.{digits}{offset}"
+
+    return datetime.fromisoformat(ts_string)
 
 
 
@@ -1395,7 +1418,7 @@ def cast_vote(match_index, side):
     if match["current_phase"] != "voting":
         return jsonify({"error": "Voting closed"}), 400
 
-    voting_ends_at = datetime.fromisoformat(match["voting_ends_at"].replace("Z", "+00:00"))
+    voting_ends_at = parse_supabase_timestamp(match["voting_ends_at"])
     if datetime.now(timezone.utc) > voting_ends_at:
         return jsonify({"error": "Voting window has ended"}), 400
 
@@ -1410,8 +1433,6 @@ def cast_vote(match_index, side):
         "p1_votes": new_votes if side == "p1" else match.get("p1_votes") or 0,
         "p2_votes": new_votes if side == "p2" else match.get("p2_votes") or 0,
     })
-
-
 
 @app.route("/start-voting/<match_index>", methods=["POST"])
 def start_voting(match_index):
@@ -1443,6 +1464,7 @@ def next_match_ready(tournament_id):
     })
 
 
+
 @app.route("/match-status/<match_index>")
 def match_status(match_index):
     match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
@@ -1450,8 +1472,12 @@ def match_status(match_index):
         return jsonify({"error": "Match not found"}), 404
 
     winner = None
+    tokens_awarded = 0
+
     if match["current_phase"] == "complete":
         winner = "p1" if (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0) else "p2"
+        # Credit tokens the first time we see this match as complete.
+        tokens_awarded = credit_round_tokens(match)
 
     return jsonify({
         "current_phase": match["current_phase"],
@@ -1460,9 +1486,32 @@ def match_status(match_index):
         "p2_votes": match.get("p2_votes") or 0,
         "voting_ends_at": match.get("voting_ends_at"),
         "winner": winner,
+        "tokens_awarded": tokens_awarded,
     })
 
+#payout function for the winner of a match, based on the round they won in
+def credit_round_tokens(match):
+    """Credits the winner of a completed match with the round's token payout.
+    Uses match_history.processed as a guard so this only ever runs once per match."""
 
+    if match.get("tokens_processed"):
+        return 0
+
+    round_ = match["which_round"]
+    payout = ROUND_TOKEN_PAYOUTS.get(round_, 0)
+
+    p1_won = (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0)
+    winner_id = match["player1_id"] if p1_won else match["player2_id"]
+
+    account = supabase_get_account(winner_id)
+    if account:
+        new_balance = account.get("tokens", 0) + payout
+        supabase_patch("account_management", winner_id, {"tokens": new_balance})
+
+    # Mark processed so re-polling never double-credits this match.
+    supabase_patch("match_history", match["index"], {"tokens_processed": True}, id_column="index")
+
+    return payout
 # --------------------------------------------------
 # Dev-only testing helpers
 # --------------------------------------------------
