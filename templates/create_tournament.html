@@ -9,7 +9,13 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-
+<style>
+    .form-error {
+        color: #ff4d4d;
+        font-weight: 600;
+        margin: 8px 0 16px;
+    }
+</style>
 <body>
 
 <section class="page-section">
@@ -17,6 +23,14 @@
     <div class="page-header">
         <h1>Create Tournament</h1>
     </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="form-error">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
 
     <form class="battle-form" method="POST">
 
@@ -51,8 +65,10 @@
             CREATE
         </button>
 
-    </form>
 
+        <input type="number" name="max_players" placeholder="Max Players (power of 2)" min="2" step="1" required>
+    </form>
+    
 </section>
 
 </body>

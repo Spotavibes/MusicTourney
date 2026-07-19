@@ -76,12 +76,14 @@ TOKEN_PACKAGES = {
 # --------------------------------------------------
 
 #change this to the amount you want the payout to be for each round
-#right now all of them are at 0 until me and aadi decide the payout amt values
-ROUND_TOKEN_PAYOUTS = {
-    4: 25,  # which_round 4 = First Round (8 players). Change this 0 to the actual value for the "first" round token payout
-    2: 50,  # which_round 2 = Second Round (4 players). Change this 0 to the actual value for the "second" round token payout
-    1: 100,  # which_round 1 = Third/Final Round (1v1). Change this 0 to the actual value for the "third" round token payout
-}
+#right now i am using a formula where the payout doubles each round deeper you go, starting at 25 tokens for round 1
+
+# depth 1 -> 25, depth 2 -> 50, depth 3 -> 100, depth 4 -> 200, etc.
+ROUND_TOKEN_BASE_PAYOUT = 25
+ROUND_TOKEN_MULTIPLIER = 2
+
+def round_token_payout(round_depth):
+    return ROUND_TOKEN_BASE_PAYOUT * (ROUND_TOKEN_MULTIPLIER ** (round_depth - 1))
 
 
 
@@ -351,6 +353,272 @@ def supabase_get_account(user_id):
     return rows[0] if rows else None
 
 
+def profile_media_url(path_or_url, bucket):
+    """Turn a storage path into a public Supabase URL, or pass through full URLs."""
+    object_path = extract_storage_object_path(path_or_url, bucket)
+    if not object_path:
+        return None
+    # Prefer signed URLs because these buckets are private.
+    signed = supabase_create_signed_url(bucket, object_path)
+    if signed:
+        return signed
+    base = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    if not base:
+        return None
+    return f"{base}/storage/v1/object/public/{bucket}/{object_path.lstrip('/')}"
+
+
+def extract_storage_object_path(path_or_url, bucket):
+    """Normalize DB values into `{user_id}/avatar.png` style object paths."""
+    if not path_or_url:
+        return None
+    value = str(path_or_url).strip()
+    if not value or value.lower() == "none":
+        return None
+
+    # Strip query string (e.g. ?t=...)
+    value = value.split("?", 1)[0]
+
+    marker = f"/storage/v1/object/public/{bucket}/"
+    if marker in value:
+        return value.split(marker, 1)[1].lstrip("/")
+
+    marker_auth = f"/storage/v1/object/authenticated/{bucket}/"
+    if marker_auth in value:
+        return value.split(marker_auth, 1)[1].lstrip("/")
+
+    marker_sign = f"/storage/v1/object/sign/{bucket}/"
+    if marker_sign in value:
+        return value.split(marker_sign, 1)[1].lstrip("/")
+
+    if value.startswith("http"):
+        # Unknown absolute URL — can't safely convert.
+        return None
+
+    # Already a relative object path
+    return value.lstrip("/")
+
+
+def supabase_create_signed_url(bucket, object_path, expires_in=60 * 60 * 24 * 7):
+    """Create a temporary signed download URL for a private storage object."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key or not object_path:
+        return None
+
+    rest_url = f"{supabase_url}/storage/v1/object/sign/{bucket}/{object_path.lstrip('/')}"
+    body = json.dumps({"expiresIn": expires_in}).encode("utf-8")
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        signed = payload.get("signedURL") or payload.get("signedUrl")
+        if not signed:
+            return None
+        if signed.startswith("http"):
+            return signed
+        return f"{supabase_url}/storage/v1{signed}"
+    except Exception as e:
+        logging.warning("Signed URL failed for %s/%s: %s", bucket, object_path, e)
+        return None
+
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def supabase_storage_upload(bucket, object_path, data_bytes, content_type):
+    """Upload (or overwrite) a file in a Supabase Storage bucket."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase not configured (missing SUPABASE_URL / SUPABASE_KEY).")
+
+    rest_url = f"{supabase_url}/storage/v1/object/{bucket}/{object_path.lstrip('/')}"
+
+    req = Request(
+        rest_url,
+        data=data_bytes,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": content_type or "application/octet-stream",
+            "x-upsert": "true",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {"Key": object_path}
+    except HTTPError as e:
+        # Some projects reject POST upsert; retry with PUT.
+        if e.code in (400, 409):
+            put_req = Request(
+                rest_url,
+                data=data_bytes,
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": content_type or "application/octet-stream",
+                    "x-upsert": "true",
+                },
+                method="PUT",
+            )
+            with urlopen(put_req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body) if body else {"Key": object_path}
+        print("FAILED STORAGE URL:", rest_url, flush=True)
+        print("STATUS:", e.code, flush=True)
+        print("BODY:", e.read().decode(), flush=True)
+        raise
+
+
+def supabase_storage_list(bucket, prefix):
+    """List objects under a prefix in a storage bucket."""
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        return []
+
+    rest_url = f"{supabase_url}/storage/v1/object/list/{bucket}"
+    body = json.dumps({
+        "prefix": prefix.rstrip("/") + "/",
+        "limit": 100,
+    }).encode("utf-8")
+
+    req = Request(
+        rest_url,
+        data=body,
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logging.warning("Storage list failed for %s/%s: %s", bucket, prefix, e)
+        return []
+
+
+def find_profile_object_path(user_id, bucket, stem):
+    """
+    Find `{user_id}/{stem}.*` in a bucket.
+    Matches the upload layout: uuid/avatar.png , uuid/banner.png
+    """
+    objects = supabase_storage_list(bucket, user_id)
+    candidates = []
+    for obj in objects:
+        name = (obj.get("name") or "").lstrip("/")
+        # API may return just the filename inside the prefix folder.
+        filename = name.split("/")[-1]
+        lower = filename.lower()
+        if lower.startswith(stem.lower() + "."):
+            candidates.append(f"{user_id}/{filename}")
+    if not candidates:
+        # Fallback to the conventional png path used by uploads.
+        return f"{user_id}/{stem}.png"
+    # Prefer exact stem.png, then newest-looking name.
+    for preferred_ext in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+        match = next((p for p in candidates if p.lower().endswith(preferred_ext)), None)
+        if match:
+            return match
+    return candidates[0]
+
+
+def get_or_create_profile(user):
+    """Return the profiles row for this user, creating one if needed."""
+    profile = supabase_fetch_one(
+        "profiles",
+        {"select": "*", "id": f"eq.{user['id']}"},
+    )
+    username = (
+        user.get("username")
+        or user.get("name")
+        or user.get("display_name")
+        or "Unknown"
+    )
+    if profile:
+        # Keep username in sync when we know the real account name.
+        if username != "Unknown" and profile.get("username") in (None, "", "Unknown"):
+            try:
+                supabase_patch("profiles", profile["id"], {"username": username})
+                profile["username"] = username
+            except Exception:
+                pass
+        return profile
+
+    created = supabase_post(
+        "profiles",
+        {
+            "id": user["id"],
+            "username": username,
+            "description": "",
+            "avatar_url": None,
+            "banner_url": None,
+        },
+    )
+    if isinstance(created, list) and created:
+        return created[0]
+    return created
+
+
+def resolve_profile_for_display(profile):
+    if not profile:
+        return None
+    display = dict(profile)
+    user_id = profile.get("id")
+
+    avatar_path = extract_storage_object_path(
+        profile.get("avatar_url"), "profile_pictures"
+    )
+    banner_path = extract_storage_object_path(
+        profile.get("banner_url"), "profile_banners"
+    )
+
+    if not avatar_path and user_id:
+        avatar_path = find_profile_object_path(user_id, "profile_pictures", "avatar")
+    if not banner_path and user_id:
+        banner_path = find_profile_object_path(user_id, "profile_banners", "banner")
+
+    display["avatar_url"] = profile_media_url(avatar_path, "profile_pictures")
+    display["banner_url"] = profile_media_url(banner_path, "profile_banners")
+    return display
+
+
+@app.route("/all-profiles")
+def all_profiles_page():
+    try:
+        profiles = supabase_fetch(
+            "profiles",
+            {
+                "select": "id,username,description,avatar_url,banner_url",
+                "order": "username.asc",
+            },
+        )
+    except Exception as e:
+        logging.exception("Failed fetching profiles: %s", e)
+        profiles = []
+        flash("Unable to load profiles right now.", "error")
+
+    profiles = [resolve_profile_for_display(p) for p in profiles]
+    return render_template("all_profiles.html", profiles=profiles)
+
+
 
 
 def fetch_supabase_leaderboard(limit: int = 20):
@@ -496,11 +764,88 @@ def dashboard_page():
         },
     )
 
+    profile = None
+    try:
+        profile = resolve_profile_for_display(get_or_create_profile(user))
+    except Exception as e:
+        logging.exception("Failed loading profile for dashboard: %s", e)
+
     return render_template(
         "dashboard.html",
         user=user,
         transactions=transactions,
+        profile=profile,
     )
+
+
+@app.route("/dashboard/update-profile-media", methods=["POST"])
+def update_profile_media():
+    if not session.get("user_id"):
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    user = get_current_user()
+    if not user:
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    avatar_file = request.files.get("avatar")
+    banner_file = request.files.get("banner")
+
+    has_avatar = avatar_file and avatar_file.filename
+    has_banner = banner_file and banner_file.filename
+
+    if not has_avatar and not has_banner:
+        flash("Choose a profile picture and/or banner to upload.", "error")
+        return redirect(url_for("dashboard_page"))
+
+    try:
+        profile = get_or_create_profile(user)
+        updates = {}
+
+        def upload_image(file_storage, bucket, field_name, prefix):
+            filename = file_storage.filename or ""
+            _, ext = os.path.splitext(filename.lower())
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise ValueError("Only JPG, PNG, GIF, or WEBP images are allowed.")
+
+            # Matches bucket layout: {user_id}/avatar.png or {user_id}/banner.png
+            object_path = f"{user['id']}/{prefix}{ext}"
+            data = file_storage.read()
+            if not data:
+                raise ValueError(f"{field_name} file was empty.")
+
+            content_type = file_storage.mimetype or "application/octet-stream"
+            supabase_storage_upload(bucket, object_path, data, content_type)
+
+            # Store the relative object path; display code builds the public URL.
+            return object_path
+
+        if has_avatar:
+            updates["avatar_url"] = upload_image(
+                avatar_file, "profile_pictures", "avatar", "avatar"
+            )
+
+        if has_banner:
+            updates["banner_url"] = upload_image(
+                banner_file, "profile_banners", "banner", "banner"
+            )
+
+        if updates:
+            patched = supabase_patch("profiles", profile["id"], updates)
+            if not patched:
+                raise RuntimeError(
+                    "Storage upload succeeded, but profiles row was not updated. "
+                    "Check RLS policies on the profiles table."
+                )
+            flash("Profile media updated.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        logging.exception("Profile media upload failed: %s", e)
+        flash("Could not upload profile media. Check storage/RLS permissions.", "error")
+
+    return redirect(url_for("dashboard_page"))
 
 
 @app.route("/battles")
@@ -846,16 +1191,20 @@ def tournaments_page():
         "tournament_browse.html",
         tournaments=tournaments,
     )
-
-@app.route("/create-tournament")
+@app.route("/create-tournament", methods=["GET"])
 def create_tournament_page():
-
     return render_template("create_tournament.html")
+
 
 @app.route("/create-tournament", methods=["POST"])
 def create_tournament():
 
     user = get_current_user()
+
+    max_players = int(request.form.get("max_players", 8))
+    if max_players < 2 or (max_players & (max_players - 1)) != 0:
+        flash("Make sure the amount of seats is a multiple of 2.", "error")
+        return redirect(url_for("create_tournament_page"))
 
     title = request.form.get("title")
     genre = request.form.get("genre")
@@ -869,7 +1218,7 @@ def create_tournament():
             "genre": genre,
             "topic": topic,
             "buy_in": buy_in,
-            "max_players": 8,
+            "max_players": max_players,
             "current_players": 0,
         },
     )
@@ -977,6 +1326,45 @@ def battle_accept_page(tournament_id):
 
 from flask import jsonify
 
+def enrich_waiting_players(players):
+    """Attach profile username/avatar/banner to tournament_players rows."""
+    if not players:
+        return []
+
+    user_ids = [p["user_id"] for p in players if p.get("user_id")]
+    profiles_by_id = {}
+
+    if user_ids:
+        ids_filter = ",".join(user_ids)
+        try:
+            profiles = supabase_fetch(
+                "profiles",
+                {
+                    "select": "id,username,description,avatar_url,banner_url",
+                    "id": f"in.({ids_filter})",
+                },
+            )
+            for profile in profiles:
+                resolved = resolve_profile_for_display(profile)
+                if resolved:
+                    profiles_by_id[resolved["id"]] = resolved
+        except Exception as e:
+            logging.exception("Failed enriching waiting-room profiles: %s", e)
+
+    enriched = []
+    for player in sorted(players, key=lambda p: p.get("seat_number") or 0):
+        profile = profiles_by_id.get(player.get("user_id"), {})
+        enriched.append({
+            "seat_number": player.get("seat_number"),
+            "user_id": player.get("user_id"),
+            "username": profile.get("username") or "Unknown",
+            "description": profile.get("description") or "",
+            "avatar_url": profile.get("avatar_url"),
+            "banner_url": profile.get("banner_url"),
+        })
+    return enriched
+
+
 @app.route("/tournament-status/<tournament_id>")
 def tournament_status(tournament_id):
 
@@ -998,7 +1386,7 @@ def tournament_status(tournament_id):
     return jsonify({
         "current_players": tournament["current_players"],
         "started": tournament["started"],
-        "players": players,
+        "players": enrich_waiting_players(players),
     })
 
 
@@ -1007,6 +1395,7 @@ import random
 
 @app.route("/join-tournament/<tournament_id>", methods=["POST"])
 def join_tournament(tournament_id):
+    
 
     user = get_current_user()
 
@@ -1034,16 +1423,13 @@ def join_tournament(tournament_id):
     )
 
     current_players = tournament["current_players"] + 1
+    seat_number = current_players
 
     supabase_patch(
         "tournaments",
         tournament_id,
-        {
-            "current_players": current_players,
-        },
+        {"current_players": current_players},
     )
-
-    seat_number = current_players
 
     supabase_post(
         "tournament_players",
@@ -1068,18 +1454,13 @@ def join_tournament(tournament_id):
         },
     )
 
-    if current_players >= 8:
-
+    if current_players >= tournament["max_players"]:
         supabase_patch(
             "tournaments",
             tournament_id,
-            {
-                "started": True,
-                "status": "active",
-            },
+            {"started": True, "status": "active"},
         )
-
-        generate_bracket(tournament_id)
+        generate_bracket(tournament_id, tournament["max_players"])
 
     return redirect(
         url_for(
@@ -1088,52 +1469,36 @@ def join_tournament(tournament_id):
         )
     )
 
+    
 
-def generate_bracket(tournament_id):
-    players = supabase_fetch(
-        "tournament_players",
-        {"select": "*", "tournament_id": f"eq.{tournament_id}"},
-    )
 
+def generate_bracket(tournament_id, max_players):
+    players = supabase_fetch("tournament_players", {"select": "*", "tournament_id": f"eq.{tournament_id}"})
     shuffled = players.copy()
     random.shuffle(shuffled)
+    starting_round = max_players // 2  # matches in round 1
 
     for i in range(0, len(shuffled), 2):
-        p1 = shuffled[i]
-        p2 = shuffled[i + 1]
+        p1, p2 = shuffled[i], shuffled[i + 1]
         slot = (i // 2) + 1
-
-        p1_submission = supabase_fetch_one(
-            "song_submissions",
-            {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p1['user_id']}"},
-        )
-        p2_submission = supabase_fetch_one(
-            "song_submissions",
-            {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p2['user_id']}"},
-        )
-
+        p1_submission = supabase_fetch_one("song_submissions", {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p1['user_id']}"})
+        p2_submission = supabase_fetch_one("song_submissions", {"tournament_id": f"eq.{tournament_id}", "user_id": f"eq.{p2['user_id']}"})
         is_first_match = (slot == 1)
 
-        supabase_post(
-            "match_history",
-            {
-                "which_tourney": tournament_id,
-                "which_round": 4,
-                "bracket_slot": slot,
-                "player1_id": p1["user_id"],
-                "player2_id": p2["user_id"],
-                "p1_seat": p1["seat_number"],
-                "p2_seat": p2["seat_number"],
-                "p1_song": p1_submission["spotify_embed_1"] if p1_submission else None,
-                "p2_song": p2_submission["spotify_embed_1"] if p2_submission else None,
-                "p1_votes": 0,
-                "p2_votes": 0,
-                # Only match 1 is live; the rest wait their turn.
-                "current_phase": "live" if is_first_match else "pending",
-                "voting_ends_at": None,
-                "processed": False,
-            },
-        )
+        supabase_post("match_history", {
+            "which_tourney": tournament_id,
+            "which_round": starting_round,
+            "round_depth": 1,
+            "bracket_slot": slot,
+            "player1_id": p1["user_id"], "player2_id": p2["user_id"],
+            "p1_seat": p1["seat_number"], "p2_seat": p2["seat_number"],
+            "p1_song": p1_submission["spotify_embed_1"] if p1_submission else None,
+            "p2_song": p2_submission["spotify_embed_1"] if p2_submission else None,
+            "p1_votes": 0, "p2_votes": 0,
+            "current_phase": "live" if is_first_match else "pending",
+            "voting_ends_at": None,
+            "processed": False,
+        })
 
 
 @app.route("/waiting/<tournament_id>")
@@ -1157,19 +1522,22 @@ def tournament_waiting_page(tournament_id):
     return render_template(
         "tournament_waiting.html",
         tournament=tournament,
-        players=players,
+        players=enrich_waiting_players(players),
     )
-
-def build_bracket_layout(all_matches, username_by_id):
-    """Builds a fixed 4->2->1 bracket tree. Winners of completed matches are
-    projected into their next-round slot immediately, even if the actual
-    next-round match_history row hasn't been created yet by advance_rounds()."""
+def build_bracket_layout(all_matches, username_by_id, max_players):
+    import math
 
     BOX_W = 200
     BOX_H = 72
     ROW_H = 36
-    PAIR_GAP = 48
+    PAIR_GAP = 24
     COL_GAP = 80
+
+    num_rounds = int(math.log2(max_players))  # e.g. 8 players -> 3 rounds
+    # which_round values count down: round1 (first round) has max_players/2 matches,
+    # so which_round == matches_in_round. Round order (earliest->final):
+    round_sizes = [max_players // (2 ** (i + 1)) for i in range(num_rounds)]
+    # e.g. max_players=8 -> round_sizes = [4, 2, 1]
 
     def real_match(round_, slot):
         return next(
@@ -1202,7 +1570,6 @@ def build_bracket_layout(all_matches, username_by_id):
         }
 
     def advanced_occupant(slot_display):
-        """Returns (seat, username) of the winner of a completed slot, or None."""
         if not slot_display["complete"]:
             return None
         if slot_display["p1_won"]:
@@ -1210,8 +1577,6 @@ def build_bracket_layout(all_matches, username_by_id):
         return slot_display["p2_seat"], slot_display["p2_username"]
 
     def project_slot(left, right):
-        """Builds a display dict for a not-yet-created next-round match,
-        filling in whichever side(s) have a known winner already."""
         slot = empty_slot()
         occ1 = advanced_occupant(left)
         occ2 = advanced_occupant(right)
@@ -1223,75 +1588,64 @@ def build_bracket_layout(all_matches, username_by_id):
             slot["p2_filled"] = True
         return slot
 
-    # Quarterfinals always exist once the bracket is generated.
-    qf = []
-    for i in range(1, 5):
-        m = real_match(4, i)
-        qf.append(display_from_real(m) if m else empty_slot())
+    # Build each round's column of display-slots, left to right.
+    columns_display = []  # columns_display[col] = list of slot dicts
+    for col, round_size in enumerate(round_sizes):
+        col_slots = []
+        for slot_num in range(1, round_size + 1):
+            m = real_match(round_size, slot_num)
+            if m:
+                col_slots.append(display_from_real(m, label_winner=(round_size == 1)))
+            elif col == 0:
+                col_slots.append(empty_slot())
+            else:
+                prev = columns_display[col - 1]
+                col_slots.append(project_slot(prev[(slot_num - 1) * 2], prev[(slot_num - 1) * 2 + 1]))
+        columns_display.append(col_slots)
 
-    # Semis: use the real row if the cron has created it; otherwise project
-    # from the two feeding QF matches so a winner shows up as soon as their
-    # own match ends, without waiting on their future opponent.
-    semi = []
-    for i in range(1, 3):
-        m = real_match(2, i)
-        if m:
-            semi.append(display_from_real(m))
-        else:
-            semi.append(project_slot(qf[(i - 1) * 2], qf[(i - 1) * 2 + 1]))
+    # Layout: compute y-centers column by column, propagating up from round 1.
+    col0_top = [i * (BOX_H + PAIR_GAP) for i in range(round_sizes[0])]
+    col0_center = [t + BOX_H / 2 for t in col0_top]
 
-    # Final: same idea, and this is the ONLY box that gets the "WINNER" label.
-    m = real_match(1, 1)
-    if m:
-        final = [display_from_real(m, label_winner=True)]
-    else:
-        final = [project_slot(semi[0], semi[1])]
+    centers = [col0_center]
+    for col in range(1, num_rounds):
+        prev_centers = centers[col - 1]
+        this_centers = [
+            (prev_centers[i * 2] + prev_centers[i * 2 + 1]) / 2
+            for i in range(len(prev_centers) // 2)
+        ]
+        centers.append(this_centers)
 
-    qf_top = [i * (BOX_H + PAIR_GAP) for i in range(4)]
-    qf_center = [t + BOX_H / 2 for t in qf_top]
-
-    semi_center = [
-        (qf_center[0] + qf_center[1]) / 2,
-        (qf_center[2] + qf_center[3]) / 2,
-    ]
-    semi_top = [c - BOX_H / 2 for c in semi_center]
-
-    final_center = (semi_center[0] + semi_center[1]) / 2
-    final_top = final_center - BOX_H / 2
-
-    col_x = [40, 40 + BOX_W + COL_GAP, 40 + 2 * (BOX_W + COL_GAP)]
+    col_x = [40 + col * (BOX_W + COL_GAP) for col in range(num_rounds)]
 
     boxes = []
-    for i, m in enumerate(qf):
-        boxes.append({**m, "x": col_x[0], "y": qf_top[i], "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
-    for i, m in enumerate(semi):
-        boxes.append({**m, "x": col_x[1], "y": semi_top[i], "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
-    boxes.append({**final[0], "x": col_x[2], "y": final_top, "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
-
     connectors = []
-    mid_x_1 = col_x[0] + BOX_W + COL_GAP / 2
-    for pair_idx in range(2):
-        top_c = qf_center[pair_idx * 2]
-        bot_c = qf_center[pair_idx * 2 + 1]
-        target_c = semi_center[pair_idx]
-        connectors.append({"x1": col_x[0] + BOX_W, "y1": top_c, "x2": mid_x_1, "y2": top_c})
-        connectors.append({"x1": col_x[0] + BOX_W, "y1": bot_c, "x2": mid_x_1, "y2": bot_c})
-        connectors.append({"x1": mid_x_1, "y1": top_c, "x2": mid_x_1, "y2": bot_c})
-        connectors.append({"x1": mid_x_1, "y1": target_c, "x2": col_x[1], "y2": target_c})
+    for col in range(num_rounds):
+        for i, slot in enumerate(columns_display[col]):
+            top = centers[col][i] - BOX_H / 2
+            boxes.append({**slot, "x": col_x[col], "y": top, "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
 
-    mid_x_2 = col_x[1] + BOX_W + COL_GAP / 2
-    connectors.append({"x1": col_x[1] + BOX_W, "y1": semi_center[0], "x2": mid_x_2, "y2": semi_center[0]})
-    connectors.append({"x1": col_x[1] + BOX_W, "y1": semi_center[1], "x2": mid_x_2, "y2": semi_center[1]})
-    connectors.append({"x1": mid_x_2, "y1": semi_center[0], "x2": mid_x_2, "y2": semi_center[1]})
-    connectors.append({"x1": mid_x_2, "y1": final_center, "x2": col_x[2], "y2": final_center})
+        if col + 1 < num_rounds:
+            mid_x = col_x[col] + BOX_W + COL_GAP / 2
+            for pair_idx in range(len(centers[col]) // 2):
+                top_c = centers[col][pair_idx * 2]
+                bot_c = centers[col][pair_idx * 2 + 1]
+                target_c = centers[col + 1][pair_idx]
+                connectors.append({"x1": col_x[col] + BOX_W, "y1": top_c, "x2": mid_x, "y2": top_c})
+                connectors.append({"x1": col_x[col] + BOX_W, "y1": bot_c, "x2": mid_x, "y2": bot_c})
+                connectors.append({"x1": mid_x, "y1": top_c, "x2": mid_x, "y2": bot_c})
+                connectors.append({"x1": mid_x, "y1": target_c, "x2": col_x[col + 1], "y2": target_c})
+
+    total_height = max(col0_top[-1] + BOX_H, 0) + 80 if col0_top else BOX_H + 80
 
     return {
         "boxes": boxes,
         "connectors": connectors,
-        "width": col_x[2] + BOX_W + 40,
-        "height": qf_top[3] + BOX_H + 80,
-        "final_center": final_center,
+        "width": col_x[-1] + BOX_W + 40,
+        "height": total_height,
+        "final_center": centers[-1][0] if centers and centers[-1] else BOX_H / 2,
     }
+
 
 @app.route("/battle-start/<tournament_id>")
 def battle_start_page(tournament_id):
@@ -1320,7 +1674,7 @@ def battle_start_page(tournament_id):
     accounts = supabase_fetch("account_management", {"select": "id,username", "id": f"in.({ids_filter})"})
     username_by_id = {a["id"]: a["username"] for a in accounts}
 
-    bracket_layout = build_bracket_layout(all_matches, username_by_id)
+    bracket_layout = build_bracket_layout(all_matches, username_by_id, tournament["max_players"])
 
     champion = None
     if tournament_complete:
@@ -1410,8 +1764,11 @@ def cast_vote(match_index, side):
     if side not in ("p1", "p2"):
         return jsonify({"error": "Invalid side"}), 400
 
-    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
 
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
     if not match:
         return jsonify({"error": "Match not found"}), 404
 
@@ -1421,6 +1778,25 @@ def cast_vote(match_index, side):
     voting_ends_at = parse_supabase_timestamp(match["voting_ends_at"])
     if datetime.now(timezone.utc) > voting_ends_at:
         return jsonify({"error": "Voting window has ended"}), 400
+
+    existing_vote = supabase_fetch_one("match_votes", {
+        "match_index": f"eq.{match_index}",
+        "user_id": f"eq.{user['id']}",
+    })
+    if existing_vote:
+        return jsonify({"error": "Already voted", "already_voted": True, "side": existing_vote["side"]}), 400
+
+    try:
+        supabase_post("match_votes", {
+            "match_index": match_index,
+            "user_id": user["id"],
+            "side": side,
+        })
+    except HTTPError as e:
+        # Unique constraint violation = duplicate vote slipped through a race condition.
+        if e.code == 409:
+            return jsonify({"error": "Already voted", "already_voted": True}), 400
+        raise
 
     if side == "p1":
         new_votes = (match.get("p1_votes") or 0) + 1
@@ -1432,6 +1808,7 @@ def cast_vote(match_index, side):
     return jsonify({
         "p1_votes": new_votes if side == "p1" else match.get("p1_votes") or 0,
         "p2_votes": new_votes if side == "p2" else match.get("p2_votes") or 0,
+        "voted_side": side,
     })
 
 @app.route("/start-voting/<match_index>", methods=["POST"])
@@ -1448,6 +1825,21 @@ def start_voting(match_index):
     return jsonify({"status": "voting_started"})
 
 
+#if user has voted for a match already
+@app.route("/vote-status/<match_index>")
+def vote_status(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"has_voted": False})
+
+    existing_vote = supabase_fetch_one("match_votes", {
+        "match_index": f"eq.{match_index}",
+        "user_id": f"eq.{user['id']}",
+    })
+    return jsonify({
+        "has_voted": bool(existing_vote),
+        "side": existing_vote["side"] if existing_vote else None,
+    })
 
 @app.route("/next-match-ready/<tournament_id>")
 def next_match_ready(tournament_id):
@@ -1497,8 +1889,8 @@ def credit_round_tokens(match):
     if match.get("tokens_processed"):
         return 0
 
-    round_ = match["which_round"]
-    payout = ROUND_TOKEN_PAYOUTS.get(round_, 0)
+    depth = match.get("round_depth", 1)
+    payout = round_token_payout(depth)
 
     p1_won = (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0)
     winner_id = match["player1_id"] if p1_won else match["player2_id"]

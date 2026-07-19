@@ -68,20 +68,23 @@
         }
 
         .embed-wrapper {
-            width: 100%;
-            max-width: 420px;
-            opacity: 0.4;
-            transition: opacity 0.4s ease;
-        }
+    position: relative;
+}
 
-        .embed-wrapper.active {
-            opacity: 1;
-        }
+    /* Target the iframe directly, not just "> div", since the Spotify API
+    may replace the container element with the iframe itself. */
+    .embed-wrapper iframe {
+        pointer-events: none !important;
+    }
 
-        .embed-wrapper > div {
-            border-radius: 12px;
-            overflow: hidden;
-        }
+    .embed-wrapper::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        cursor: not-allowed;
+        background: transparent;
+    }
 
         .play-btn {
             margin-top: 20px;
@@ -131,6 +134,12 @@
             opacity: 1;
             pointer-events: auto;
         }
+        .vote-btn.voted-locked {
+            opacity: 0.4 !important;
+            cursor: not-allowed;
+            background-color: #444 !important;
+            pointer-events: none;
+        }
 
         .vote-btn.blue-btn {
             background-color: #1e64dc;
@@ -177,6 +186,21 @@
             font-size: 30px;
             transform: scale(1.08);
             transition: font-size 0.4s ease, transform 0.4s ease;
+}
+                .embed-wrapper {
+            position: relative;
+        }
+
+        .embed-wrapper > div {
+            pointer-events: none;
+}
+
+        .embed-wrapper::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    cursor: not-allowed;
 }
     </style>
 </head>
@@ -374,20 +398,60 @@
     p1PlayBtn.addEventListener("click", playP1);
     p2PlayBtn.addEventListener("click", playP2);
 
-   async function castVote(side) {
+   let hasVoted = false;
+
+async function checkVoteStatus() {
     try {
-        const resp = await fetch(`/vote/${matchIndex}/${side}`, {
-            method: "POST",
-        });
+        const resp = await fetch(`/vote-status/${matchIndex}`);
+        const data = await resp.json();
+        if (data.has_voted) {
+            lockVoteButtons(data.side);
+        }
+    } catch (err) {
+        console.error("Vote status check failed:", err);
+    }
+}
+
+function lockVoteButtons(votedSide) {
+    hasVoted = true;
+    voteP1Btn.disabled = true;
+    voteP2Btn.disabled = true;
+    voteP1Btn.classList.add("voted-locked");
+    voteP2Btn.classList.add("voted-locked");
+
+    if (votedSide === "p1") {
+        voteP1Btn.textContent = "VOTED";
+    } else if (votedSide === "p2") {
+        voteP2Btn.textContent = "VOTED";
+    }
+}
+
+async function castVote(side) {
+    if (hasVoted) return;
+
+    // Optimistically lock immediately so spam-clicking can't fire multiple requests.
+    hasVoted = true;
+    voteP1Btn.disabled = true;
+    voteP2Btn.disabled = true;
+
+    try {
+        const resp = await fetch(`/vote/${matchIndex}/${side}`, { method: "POST" });
         const data = await resp.json();
 
         if (!resp.ok) {
             console.error("Vote rejected:", data.error);
+            if (data.already_voted) {
+                lockVoteButtons(data.side);
+            } else {
+                // Some other failure (voting closed, etc) — leave locked, don't re-enable.
+                hasVoted = true;
+            }
             return;
         }
 
         p1VoteCount.textContent = `${data.p1_votes} votes`;
         p2VoteCount.textContent = `${data.p2_votes} votes`;
+        lockVoteButtons(data.voted_side);
     } catch (err) {
         console.error("Vote failed:", err);
     }
@@ -410,6 +474,7 @@
             statusText.textContent = "Vote for your favorite!";
             voteP1Btn.classList.add("visible");
             voteP2Btn.classList.add("visible");
+            checkVoteStatus();
 
             if (data.voting_ends_at && !countdownInterval) {
                 const endsAt = new Date(data.voting_ends_at).getTime();

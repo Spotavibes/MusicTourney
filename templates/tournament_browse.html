@@ -237,7 +237,7 @@
                 <p class="topic-text">{{ tournament.topic }}</p>
 
                 <div class="meta-row">
-                    <div class="meta-item"><strong>{{ tournament.current_players }}</strong>/8 players</div>
+                    <div class="meta-item"><strong>{{ tournament.current_players }}</strong>/{{ tournament.max_players }} players</div>
                     <div class="meta-item"><strong>{{ tournament.buy_in }}</strong> token buy-in</div>
                     <div class="meta-item">
                         <strong>{% if tournament.started %}Live{% else %}Open{% endif %}</strong>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Profiles</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .profiles-page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+
+        .profiles-page h1 {
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+        }
+
+        .profiles-page .subtitle {
+            opacity: 0.7;
+            margin-bottom: 32px;
+        }
+
+        .profiles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        .profile-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .profile-banner {
+            height: 110px;
+            background: #1a1a1a center/cover no-repeat;
+        }
+
+        .profile-banner.empty {
+            background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+        }
+
+        .profile-body {
+            padding: 0 16px 18px;
+            margin-top: -36px;
+            text-align: center;
+        }
+
+        .profile-avatar {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #121212;
+            background: #2a2a2a;
+            display: block;
+            margin: 0 auto 12px;
+        }
+
+        .profile-avatar.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.4);
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .profile-username {
+            font-weight: 700;
+            font-size: 1.05rem;
+            margin-bottom: 6px;
+        }
+
+        .profile-description {
+            opacity: 0.65;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .empty-state {
+            opacity: 0.7;
+            padding: 40px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<section class="profiles-page">
+    <h1>All Profiles</h1>
+    <p class="subtitle">{{ profiles|length }} users</p>
+
+    {% if profiles %}
+    <div class="profiles-grid">
+        {% for profile in profiles %}
+        <div class="profile-card">
+            {% if profile.banner_url %}
+            <div class="profile-banner" style="background-image: url('{{ profile.banner_url }}');"></div>
+            {% else %}
+            <div class="profile-banner empty"></div>
+            {% endif %}
+
+            <div class="profile-body">
+                {% if profile.avatar_url %}
+                <img class="profile-avatar" src="{{ profile.avatar_url }}" alt="{{ profile.username }}">
+                {% else %}
+                <div class="profile-avatar placeholder">
+                    {{ (profile.username or '?')[:1]|upper }}
+                </div>
+                {% endif %}
+
+                <div class="profile-username">{{ profile.username or 'Unknown' }}</div>
+                {% if profile.description %}
+                <div class="profile-description">{{ profile.description }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">No profiles found.</p>
+    {% endif %}
+</section>
+</body>
+</html>
