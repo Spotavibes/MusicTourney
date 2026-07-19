@@ -209,6 +209,8 @@
 
 <div class="status-bar" id="status-text">Get ready...</div>
 <div class="countdown-timer" id="countdown-timer"></div>
+<div class="countdown-timer" id="turn-countdown"></div>
+<div class="countdown-timer" id="play-countdown"></div>
 
 <div class="battle-arena">
     <div class="token-payout-notification" id="token-payout-notification"></div>
@@ -220,9 +222,11 @@
             <div id="p1-embed-container" data-embed-url="{{ match.p1_song }}"></div>
         </div>
 
-        <button class="play-btn blue-btn" id="p1-play-btn">
-            PLAY SONG
-        </button>
+        <button class="play-btn blue-btn" id="p1-play-btn">PLAY SONG</button>
+        <button class="play-btn blue-btn" id="p1-pause-btn" style="display:none;">PAUSE</button>
+        <button class="play-btn blue-btn" id="p1-endturn-btn" style="display:none;">END TURN</button>
+
+        
 
         <button class="vote-btn blue-btn" id="vote-p1-btn">
             VOTE {{ p1_username }}
@@ -243,6 +247,8 @@
         <button class="play-btn red-btn" id="p2-play-btn">
             PLAY SONG
         </button>
+<button class="play-btn red-btn" id="p2-pause-btn" style="display:none;">PAUSE</button>
+<button class="play-btn red-btn" id="p2-endturn-btn" style="display:none;">END TURN</button>
 
         <button class="vote-btn red-btn" id="vote-p2-btn">
             VOTE {{ p2_username }}
@@ -273,9 +279,7 @@
     const p1VoteCount = document.getElementById("p1-vote-count");
     const p2VoteCount = document.getElementById("p2-vote-count");
 
-    let currentTurn = "p1"; // p1 goes first
-    let p1HasPlayed = false;
-    let p2HasPlayed = false;
+
 
     let p1Controller = null;
     let p2Controller = null;
@@ -323,80 +327,183 @@
         return `spotify:${type}:${id}`;
     }
 
-    function checkBothLoaded() {
+
+
+function checkBothLoaded() {
         if (p1Controller && p2Controller) {
-            updateTurnUI();
+            statusText.textContent = "Loading match state...";
         }
     }
 
-    function updateTurnUI() {
-        if (currentTurn === "p1") {
-            statusText.textContent = "Blue team's turn — press play";
-            p1PlayBtn.disabled = false;
-            p2PlayBtn.disabled = true;
-        } else if (currentTurn === "p2") {
-            statusText.textContent = "Red team's turn — press play";
-            p1PlayBtn.disabled = true;
-            p2PlayBtn.disabled = false;
-        } else {
-        p1PlayBtn.disabled = true;
-        p2PlayBtn.disabled = true;
-        statusText.textContent = "Get ready to vote...";
-    }}
+    const MY_SIDE = "{{ my_side or '' }}"; // 'p1', 'p2', or ''
 
-    function playP1() {
-        if (currentTurn !== "p1" || p1HasPlayed || !p1Controller) {
-            return;
-        }
+    const p1PauseBtn = document.getElementById("p1-pause-btn");
+    const p2PauseBtn = document.getElementById("p2-pause-btn");
+    const p1EndTurnBtn = document.getElementById("p1-endturn-btn");
+    const p2EndTurnBtn = document.getElementById("p2-endturn-btn");
 
-        p1HasPlayed = true;
-        p1Wrapper.classList.add("active");
-        p1PlayBtn.disabled = true;
-        p1PlayBtn.textContent = "PLAYING...";
-
-        p1Controller.play();
-
-        // Adjust this duration to roughly match the song clip length.
-        setTimeout(() => {
-            p1Controller.pause();
-            currentTurn = "p2";
-            updateTurnUI();
-        }, 15000);
-    }
-
-    function playP2() {
-    if (currentTurn !== "p2" || p2HasPlayed || !p2Controller) {
-        return;
-    }
-
-    p2HasPlayed = true;
-    p2Wrapper.classList.add("active");
-    p2PlayBtn.disabled = true;
-    p2PlayBtn.textContent = "PLAYING...";
-
-    p2Controller.play();
-
-    setTimeout(async () => {
-        p2Controller.pause();
-        currentTurn = "done";
-        updateTurnUI();
-
+    async function requestPlay(side) {
+        if (MY_SIDE !== side) return; // client-side convenience only — server re-checks
         try {
-            const resp = await fetch(`/start-voting/${matchIndex}`, { method: "POST" });
-            if (!resp.ok) {
-                const err = await resp.json();
-                console.error("start-voting rejected:", err);
-            }
+            const resp = await fetch(`/play-turn/${matchIndex}`, { method: "POST" });
+            const data = await resp.json();
+            if (!resp.ok) console.error("play-turn rejected:", data.error);
         } catch (err) {
-            console.error("Failed to start voting:", err);
+            console.error("play-turn failed:", err);
         }
-        // No longer manually revealing vote buttons here — pollMatchStatus() handles it
-        // once it confirms the server actually recorded phase = "voting".
-    }, 15000);
+    }
+
+    async function requestPause(side) {
+        if (MY_SIDE !== side) return;
+        await fetch(`/pause-turn/${matchIndex}`, { method: "POST" });
+    }
+
+    async function requestResume(side) {
+        if (MY_SIDE !== side) return;
+        await fetch(`/resume-turn/${matchIndex}`, { method: "POST" });
+    }
+
+    async function requestEndTurn(side) {
+        if (MY_SIDE !== side) return;
+        try {
+            const resp = await fetch(`/end-turn/${matchIndex}`, { method: "POST" });
+            const data = await resp.json();
+            if (!resp.ok) console.error("end-turn rejected:", data.error);
+        } catch (err) {
+            console.error("end-turn failed:", err);
+        }
+    }
+
+    p1PlayBtn.addEventListener("click", () => requestPlay("p1"));
+    p2PlayBtn.addEventListener("click", () => requestPlay("p2"));
+    p1PauseBtn.addEventListener("click", () => {
+        p1PauseBtn.textContent === "PAUSE" ? requestPause("p1") : requestResume("p1");
+    });
+    p2PauseBtn.addEventListener("click", () => {
+        p2PauseBtn.textContent === "PAUSE" ? requestPause("p2") : requestResume("p2");
+    });
+    p1EndTurnBtn.addEventListener("click", () => requestEndTurn("p1"));
+    p2EndTurnBtn.addEventListener("click", () => requestEndTurn("p2"));
+
+    // --- Server-driven playback sync: this is what makes BOTH browsers hear the song ---
+    let lastTurnState = null;
+    let lastPlayingSide = null;
+
+    async function pollTurnStatus() {
+        if (!p1Controller || !p2Controller) return;
+        try {
+            const resp = await fetch(`/turn-status/${matchIndex}`);
+            const data = await resp.json();
+            if (data.current_phase !== "live") {
+                // We've left the live-turn phase (voting/complete) — make sure
+                // playback actually stops instead of running forever.
+                if (lastTurnState !== null || lastPlayingSide !== null) {
+                    p1Controller.pause();
+                    p2Controller.pause();
+                    lastTurnState = null;
+                    lastPlayingSide = null;
+                }
+                turnCountdownEl.textContent = "";
+                playCountdownEl.textContent = "";
+                return;
+            }
+
+            const { current_turn, turn_state, playing_side, p1_has_played, p2_has_played, turn_started_at, turn_wait_started_at } = data;
+
+            if (turn_started_at && turn_state === "playing") {
+                const startedMs = new Date(turn_started_at).getTime();
+                const elapsedSec = (Date.now() - startedMs) / 1000;
+                const secondsLeft = Math.max(0, Math.ceil(15 - elapsedSec));
+                turnCountdownEl.textContent = `${secondsLeft}s left in turn`;
+            } else {
+                turnCountdownEl.textContent = "";
+            }
+
+            if (turn_wait_started_at && turn_state === "idle" && current_turn !== "done") {
+                const waitStartedMs = new Date(turn_wait_started_at).getTime();
+                const waitElapsedSec = (Date.now() - waitStartedMs) / 1000;
+                const waitSecondsLeft = Math.max(0, Math.ceil(3 - waitElapsedSec));
+                playCountdownEl.textContent = `Auto-play in ${waitSecondsLeft}s`;
+            } else {
+                playCountdownEl.textContent = "";
+            }
+
+           // Drive both local Spotify controllers from shared server state,
+            // but only call play()/pause() when something actually changed —
+            // calling play() on an already-playing embed restarts the track.
+            const stateChanged = (turn_state !== lastTurnState) || (playing_side !== lastPlayingSide);
+            if (stateChanged) {
+                if (turn_state === "playing") {
+                    if (playing_side === "p1") { p1Controller.play(); p2Controller.pause(); }
+                    else if (playing_side === "p2") { p2Controller.play(); p1Controller.pause(); }
+                } else {
+                    p1Controller.pause();
+                    p2Controller.pause();
+                }
+            }
+
+            // Update status text + whose turn it is
+            if (current_turn === "p1") statusText.textContent = "Blue team's turn";
+            else if (current_turn === "p2") statusText.textContent = "Red team's turn";
+
+            // Show/hide controls based on MY_SIDE and current_turn
+            const iAmP1Active = MY_SIDE === "p1" && current_turn === "p1";
+            const iAmP2Active = MY_SIDE === "p2" && current_turn === "p2";
+
+            p1PlayBtn.disabled = !(iAmP1Active && !p1_has_played);
+            p2PlayBtn.disabled = !(iAmP2Active && !p2_has_played);
+            p1PlayBtn.textContent = p1_has_played ? "PLAYED" : "PLAY SONG";
+            p2PlayBtn.textContent = p2_has_played ? "PLAYED" : "PLAY SONG";
+
+            p1PauseBtn.style.display = (MY_SIDE === "p1" && playing_side === "p1") ? "block" : "none";
+            p2PauseBtn.style.display = (MY_SIDE === "p2" && playing_side === "p2") ? "block" : "none";
+            p1PauseBtn.textContent = (playing_side === "p1" && turn_state === "playing") ? "PAUSE" : "RESUME";
+            p2PauseBtn.textContent = (playing_side === "p2" && turn_state === "playing") ? "PAUSE" : "RESUME";
+
+            p1EndTurnBtn.style.display = (MY_SIDE === "p1" && playing_side === "p1") ? "block" : "none";
+            p2EndTurnBtn.style.display = (MY_SIDE === "p2" && playing_side === "p2") ? "block" : "none";
+
+            lastTurnState = turn_state;
+            lastPlayingSide = playing_side;
+        } catch (err) {
+            console.error("turn-status poll failed:", err);
+        }
+    }
+
+setInterval(pollTurnStatus, 1500);
+const playCountdownEl = document.getElementById("play-countdown");
+
+async function checkPlayTimeout() {
+    try {
+        const resp = await fetch(`/check-play-timeout/${matchIndex}`, { method: "POST" });
+        const data = await resp.json();
+        if (data.auto_played) {
+            playCountdownEl.textContent = "";
+        }
+    } catch (err) {
+        console.error("check-play-timeout failed:", err);
+    }
 }
 
-    p1PlayBtn.addEventListener("click", playP1);
-    p2PlayBtn.addEventListener("click", playP2);
+setInterval(checkPlayTimeout, 1000);
+
+const turnCountdownEl = document.getElementById("turn-countdown");
+
+async function checkTurnTimeout() {
+    try {
+        const resp = await fetch(`/check-turn-timeout/${matchIndex}`, { method: "POST" });
+        const data = await resp.json();
+        if (data.expired) {
+            turnCountdownEl.textContent = "";
+        }
+    } catch (err) {
+        console.error("check-turn-timeout failed:", err);
+    }
+}
+
+setInterval(checkTurnTimeout, 1000);
+
+
 
    let hasVoted = false;
 

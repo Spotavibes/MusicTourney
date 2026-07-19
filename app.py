@@ -1498,6 +1498,12 @@ def generate_bracket(tournament_id, max_players):
             "current_phase": "live" if is_first_match else "pending",
             "voting_ends_at": None,
             "processed": False,
+            "current_turn": "p1",
+            "turn_state": "idle",
+            "playing_side": None,
+            "p1_has_played": False,
+            "p2_has_played": False,
+            "turn_wait_started_at": datetime.utcnow().isoformat() + "Z" if is_first_match else None,
         })
 
 
@@ -1750,12 +1756,15 @@ def battle_game_page(match_index):
 
     p1_account = supabase_get_account(match["player1_id"])
     p2_account = supabase_get_account(match["player2_id"])
+    user = get_current_user()
+    my_side = get_player_side(match, user)
 
     return render_template(
         "battle_game.html",
         match=match,
         p1_username=p1_account["username"] if p1_account else "Unknown",
         p2_username=p2_account["username"] if p2_account else "Unknown",
+        my_side=my_side,
     )
 
     
@@ -1811,18 +1820,6 @@ def cast_vote(match_index, side):
         "voted_side": side,
     })
 
-@app.route("/start-voting/<match_index>", methods=["POST"])
-def start_voting(match_index):
-    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
-    if not match or match["current_phase"] != "live":
-        return jsonify({"error": "Invalid match state"}), 400
-
-    supabase_patch("match_history", match_index, {
-        "current_phase": "voting",
-        "voting_ends_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat() + "Z",
-    }, id_column="index")
-
-    return jsonify({"status": "voting_started"})
 
 
 #if user has voted for a match already
@@ -1880,6 +1877,259 @@ def match_status(match_index):
         "winner": winner,
         "tokens_awarded": tokens_awarded,
     })
+
+#for making the battle live and on all players screen
+def get_player_side(match, user):
+    """Returns 'p1', 'p2', or None based on the logged-in user's relation to this match."""
+    if not user:
+        return None
+    if user["id"] == match["player1_id"]:
+        return "p1"
+    if user["id"] == match["player2_id"]:
+        return "p2"
+    return None
+
+
+@app.route("/play-turn/<match_index>", methods=["POST"])
+def play_turn(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+    if match["current_phase"] != "live":
+        return jsonify({"error": "Match is not live"}), 400
+
+    side = get_player_side(match, user)
+    if side is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    if match.get("current_turn") != side:
+        return jsonify({"error": "It's not your turn"}), 400
+    if match.get(f"{side}_has_played"):
+        return jsonify({"error": "You already played your song"}), 400
+    
+    supabase_patch("match_history", match_index, {
+            "turn_state": "playing",
+            "playing_side": side,
+            f"{side}_has_played": True,
+            "turn_started_at": datetime.utcnow().isoformat() + "Z",
+            "turn_wait_started_at": None,
+        }, id_column="index")
+
+    return jsonify({"status": "playing", "side": side})
+
+
+@app.route("/pause-turn/<match_index>", methods=["POST"])
+def pause_turn(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+
+    side = get_player_side(match, user)
+    if side is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    # Only the player whose song is currently playing may pause it.
+    if match.get("playing_side") != side or match.get("turn_state") != "playing":
+        return jsonify({"error": "Nothing to pause"}), 400
+
+    supabase_patch("match_history", match_index, {
+        "turn_state": "paused",
+    }, id_column="index")
+
+    return jsonify({"status": "paused"})
+
+
+@app.route("/resume-turn/<match_index>", methods=["POST"])
+def resume_turn(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+
+    side = get_player_side(match, user)
+    if side is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    if match.get("playing_side") != side or match.get("turn_state") != "paused":
+        return jsonify({"error": "Nothing to resume"}), 400
+
+    supabase_patch("match_history", match_index, {
+        "turn_state": "playing",
+    }, id_column="index")
+
+    return jsonify({"status": "playing"})
+
+
+@app.route("/end-turn/<match_index>", methods=["POST"])
+def end_turn(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+    if match["current_phase"] != "live":
+        return jsonify({"error": "Match is not live"}), 400
+
+    side = get_player_side(match, user)
+    if side is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    if match.get("current_turn") != side:
+        return jsonify({"error": "It's not your turn"}), 400
+    if not match.get(f"{side}_has_played"):
+        return jsonify({"error": "Play your song before ending your turn"}), 400
+
+    if side == "p1":
+        supabase_patch("match_history", match_index, {
+                "current_turn": "p2",
+                "turn_state": "idle",
+                "playing_side": None,
+                "turn_started_at": None,
+                "turn_wait_started_at": datetime.utcnow().isoformat() + "Z",
+            }, id_column="index")
+        return jsonify({"status": "advanced", "current_turn": "p2"})
+
+        # side == "p2" -> both players have gone, move to voting
+    supabase_patch("match_history", match_index, {
+            "current_turn": "done",
+            "turn_state": "idle",
+            "playing_side": None,
+            "turn_started_at": None,
+            "current_phase": "voting",
+            "voting_ends_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat() + "Z",
+        }, id_column="index")
+    return jsonify({"status": "voting_started"})
+
+TURN_DURATION_SECONDS = 15
+
+@app.route("/check-turn-timeout/<match_index>", methods=["POST"])
+@app.route("/check-turn-timeout/<match_index>", methods=["POST"])
+def check_turn_timeout(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+    if match["current_phase"] != "live":
+        return jsonify({"error": "Match is not live"}), 400
+
+    # Either player in this match may trigger the timeout check — not just
+    # whoever's turn it is — so a lagging/closed tab can't stall the match.
+    if get_player_side(match, user) is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    turn_started_at = match.get("turn_started_at")
+    current_turn = match.get("current_turn")
+
+    if not turn_started_at or current_turn not in ("p1", "p2"):
+        return jsonify({"expired": False})
+
+    started = parse_supabase_timestamp(turn_started_at)
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+
+    if elapsed < TURN_DURATION_SECONDS:
+        return jsonify({"expired": False, "seconds_left": TURN_DURATION_SECONDS - elapsed})
+
+    # Time's up — force-advance the turn the same way end-turn does.
+    side = current_turn
+    if side == "p1":
+        supabase_patch("match_history", match_index, {
+            "current_turn": "p2",
+            "turn_state": "idle",
+            "playing_side": None,
+            "turn_started_at": None,
+            "turn_wait_started_at": datetime.utcnow().isoformat() + "Z",
+        }, id_column="index")
+        return jsonify({"expired": True, "status": "advanced", "current_turn": "p2"})
+
+    supabase_patch("match_history", match_index, {
+        "current_turn": "done",
+        "turn_state": "idle",
+        "playing_side": None,
+        "turn_started_at": None,
+        "current_phase": "voting",
+        "voting_ends_at": (datetime.utcnow() + timedelta(seconds=30)).isoformat() + "Z",
+    }, id_column="index")
+    return jsonify({"expired": True, "status": "voting_started"})
+
+PLAY_WAIT_SECONDS = 3
+
+@app.route("/check-play-timeout/<match_index>", methods=["POST"])
+def check_play_timeout(match_index):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+    if match["current_phase"] != "live":
+        return jsonify({"error": "Match is not live"}), 400
+
+    # Either player may trigger this check, same reasoning as check-turn-timeout.
+    if get_player_side(match, user) is None:
+        return jsonify({"error": "You are not a player in this match"}), 403
+
+    current_turn = match.get("current_turn")
+    turn_state = match.get("turn_state")
+    turn_wait_started_at = match.get("turn_wait_started_at")
+
+    if turn_state != "idle" or current_turn not in ("p1", "p2") or not turn_wait_started_at:
+        return jsonify({"auto_played": False})
+
+    started = parse_supabase_timestamp(turn_wait_started_at)
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+
+    if elapsed < PLAY_WAIT_SECONDS:
+        return jsonify({"auto_played": False, "seconds_left": PLAY_WAIT_SECONDS - elapsed})
+
+    side = current_turn
+    if match.get(f"{side}_has_played"):
+        # Already played somehow (race) — nothing to do.
+        return jsonify({"auto_played": False})
+
+    supabase_patch("match_history", match_index, {
+        "turn_state": "playing",
+        "playing_side": side,
+        f"{side}_has_played": True,
+        "turn_started_at": datetime.utcnow().isoformat() + "Z",
+        "turn_wait_started_at": None,
+    }, id_column="index")
+
+    return jsonify({"auto_played": True, "side": side})
+@app.route("/turn-status/<match_index>")
+def turn_status(match_index):
+    match = supabase_fetch_one("match_history", {"index": f"eq.{match_index}"})
+    if not match:
+        return jsonify({"error": "Match not found"}), 404
+
+    return jsonify({
+        "current_turn": match.get("current_turn"),
+        "turn_state": match.get("turn_state"),
+        "playing_side": match.get("playing_side"),
+        "p1_has_played": match.get("p1_has_played"),
+        "p2_has_played": match.get("p2_has_played"),
+        "current_phase": match.get("current_phase"),
+        "turn_started_at": match.get("turn_started_at"),
+        "turn_wait_started_at": match.get("turn_wait_started_at"),
+    })
+
+
 
 #payout function for the winner of a match, based on the round they won in
 def credit_round_tokens(match):
