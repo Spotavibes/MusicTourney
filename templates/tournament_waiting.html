@@ -51,7 +51,9 @@
                         </div>
                         {% endif %}
 
-                        <div class="profile-username">{{ player.username or 'Unknown' }}</div>
+                        <div class="profile-username" style="color: {{ player.color or '#ffffff' }};">
+                            {{ player.username or 'Unknown' }}
+                        </div>
                         <div class="waiting-seat-label">Seat {{ player.seat_number }}</div>
                     </div>
                 </div>
@@ -76,6 +78,7 @@
     function renderPlayerCard(player) {
         const username = player.username || "Unknown";
         const initial = username.trim().charAt(0).toUpperCase() || "?";
+        const usernameColor = player.color || "#ffffff";
         const banner = player.banner_url
             ? `<div class="profile-banner" style="background-image: url('${escapeHtml(player.banner_url)}');"></div>`
             : `<div class="profile-banner empty"></div>`;
@@ -90,7 +93,9 @@
                 ${banner}
                 <div class="profile-body">
                     ${avatar}
-                    <div class="profile-username">${escapeHtml(username)}</div>
+                    <div class="profile-username" style="color: ${escapeHtml(usernameColor)};">
+                        ${escapeHtml(username)}
+                    </div>
                     <div class="waiting-seat-label">Seat ${escapeHtml(player.seat_number)}</div>
                 </div>
             </div>

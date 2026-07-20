@@ -113,7 +113,9 @@
                 </div>
                 {% endif %}
 
-                <div class="profile-username">{{ profile.username or 'Unknown' }}</div>
+                <div class="profile-username" style="color: {{ profile.color or '#ffffff' }};">
+                    {{ profile.username or 'Unknown' }}
+                </div>
                 {% if profile.description %}
                 <div class="profile-description">{{ profile.description }}</div>
                 {% endif %}

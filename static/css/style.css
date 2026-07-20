@@ -1143,9 +1143,158 @@ body {
 
 @media (max-width: 768px) {
     .accept-page,
-    .submission-page {
+    .submission-page,
+    .create-page {
         padding: 10px 18px 56px;
     }
+}
+
+/* --------------------------------------------------
+   CREATE TOURNAMENT
+-------------------------------------------------- */
+
+.create-page {
+    min-height: calc(100vh - 110px);
+    display: grid;
+    place-items: center;
+    padding: 20px 40px 80px;
+}
+
+.create-shell {
+    width: min(760px, 100%);
+}
+
+.create-header {
+    text-align: center;
+    padding-top: 0;
+    margin-bottom: 24px;
+}
+
+.create-header h1 {
+    font-size: clamp(2.2rem, 6vw, 4rem);
+    line-height: 1;
+    margin-bottom: 10px;
+}
+
+.create-header p {
+    max-width: 620px;
+    margin: 0 auto;
+}
+
+.create-flash-list {
+    max-width: 760px;
+    margin: 0 auto 20px;
+    display: grid;
+    gap: 10px;
+}
+
+.create-flash-list .flash {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+}
+
+.create-flash-list .flash.success {
+    border-color: rgba(30, 215, 96, 0.4);
+    color: var(--green);
+    background: rgba(30, 215, 96, 0.08);
+}
+
+.create-flash-list .flash.error {
+    border-color: rgba(255, 79, 109, 0.4);
+    color: #ff6b8a;
+    background: rgba(255, 79, 109, 0.08);
+}
+
+.create-form {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 28px;
+    padding: clamp(24px, 4vw, 38px);
+    backdrop-filter: blur(14px);
+    display: grid;
+    gap: 12px;
+}
+
+.create-form label {
+    margin-top: 8px;
+    color: rgba(255,255,255,0.9);
+    font-weight: 700;
+    font-size: 0.93rem;
+}
+
+.create-form input[type="text"],
+.create-form input[type="number"],
+.create-form textarea {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(8, 8, 8, 0.55);
+    color: var(--white);
+    padding: 14px 16px;
+    font-family: "Montserrat", sans-serif;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.create-form textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.create-form input::placeholder,
+.create-form textarea::placeholder {
+    color: rgba(255,255,255,0.42);
+}
+
+.create-form input:focus,
+.create-form textarea:focus {
+    outline: none;
+    border-color: rgba(30, 215, 96, 0.85);
+    box-shadow: 0 0 0 3px rgba(30, 215, 96, 0.16);
+    background: rgba(12, 12, 12, 0.75);
+}
+
+.create-hint {
+    opacity: 0.65;
+    font-size: 0.88rem;
+    margin-top: -4px;
+}
+
+.create-form .primary-btn {
+    width: 100%;
+    min-height: 50px;
+    margin-top: 8px;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------
+   DASHBOARD PROFILE EDIT
+-------------------------------------------------- */
+
+.dashboard-profile-form input[type="text"] {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(8, 8, 8, 0.55);
+    color: var(--white);
+    padding: 14px 16px;
+    font-family: "Montserrat", sans-serif;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.dashboard-profile-form input[type="text"]:focus {
+    outline: none;
+    border-color: rgba(30, 215, 96, 0.85);
+    box-shadow: 0 0 0 3px rgba(30, 215, 96, 0.16);
+    background: rgba(12, 12, 12, 0.75);
+}
+
+.dashboard-profile-form .form-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.1);
+    margin: 8px 0;
 }
 
 /* --------------------------------------------------

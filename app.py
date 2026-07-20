@@ -540,6 +540,46 @@ def find_profile_object_path(user_id, bucket, stem):
     return candidates[0]
 
 
+DEFAULT_PROFILE_COLOR = "#ffffff"
+
+
+def validate_profile_color(color):
+    """Validate hex color strings for safe inline CSS usage."""
+    if color is None:
+        return None
+    value = str(color).strip()
+    if not value or value.lower() in ("none", "null"):
+        return None
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        return value.lower()
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", value):
+        return value.lower()
+    return None
+
+
+def normalize_profile_color(color):
+    """Normalize a color value to a 6-digit hex string for storage."""
+    validated = validate_profile_color(color)
+    if validated:
+        if len(validated) == 4:
+            return "#" + "".join(ch * 2 for ch in validated[1:])
+        return validated
+
+    # Support legacy numeric values saved before color was a text column.
+    if isinstance(color, (int, float)):
+        return f"#{int(color):06x}"
+    if isinstance(color, str) and color.strip().isdigit():
+        return f"#{int(color.strip()):06x}"
+
+    return None
+
+
+def resolve_profile_color(color):
+    """Return a safe CSS color for username display; default white when null."""
+    normalized = normalize_profile_color(color)
+    return normalized or DEFAULT_PROFILE_COLOR
+
+
 def get_or_create_profile(user):
     """Return the profiles row for this user, creating one if needed."""
     profile = supabase_fetch_one(
@@ -570,6 +610,7 @@ def get_or_create_profile(user):
             "description": "",
             "avatar_url": None,
             "banner_url": None,
+            "color": None,
         },
     )
     if isinstance(created, list) and created:
@@ -597,6 +638,7 @@ def resolve_profile_for_display(profile):
 
     display["avatar_url"] = profile_media_url(avatar_path, "profile_pictures")
     display["banner_url"] = profile_media_url(banner_path, "profile_banners")
+    display["color"] = resolve_profile_color(profile.get("color"))
     return display
 
 
@@ -606,7 +648,7 @@ def all_profiles_page():
         profiles = supabase_fetch(
             "profiles",
             {
-                "select": "id,username,description,avatar_url,banner_url",
+                "select": "id,username,description,avatar_url,banner_url,color",
                 "order": "username.asc",
             },
         )
@@ -844,6 +886,55 @@ def update_profile_media():
     except Exception as e:
         logging.exception("Profile media upload failed: %s", e)
         flash("Could not upload profile media. Check storage/RLS permissions.", "error")
+
+    return redirect(url_for("dashboard_page"))
+
+
+@app.route("/dashboard/update-username", methods=["POST"])
+def update_profile_username():
+    if not session.get("user_id"):
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    user = get_current_user()
+    if not user:
+        flash("Please log in to update your profile.", "error")
+        return redirect(url_for("login"))
+
+    username = request.form.get("username", "").strip()
+    color = request.form.get("color", "").strip()
+
+    if not username:
+        flash("Username cannot be empty.", "error")
+        return redirect(url_for("dashboard_page"))
+
+    if len(username) < 3 or len(username) > 30:
+        flash("Username must be between 3 and 30 characters.", "error")
+        return redirect(url_for("dashboard_page"))
+
+    validated_color = normalize_profile_color(color)
+    if color and not validated_color:
+        flash("Please choose a valid color.", "error")
+        return redirect(url_for("dashboard_page"))
+
+    try:
+        profile = get_or_create_profile(user)
+        updates = {"username": username}
+        # Store null for default white; otherwise save normalized hex text.
+        if validated_color and validated_color != DEFAULT_PROFILE_COLOR:
+            updates["color"] = validated_color
+        else:
+            updates["color"] = None
+
+        patched = supabase_patch("profiles", profile["id"], updates)
+        if not patched:
+            raise RuntimeError(
+                "Could not update profile. Check RLS policies on the profiles table."
+            )
+        flash("Profile updated.", "success")
+    except Exception as e:
+        logging.exception("Profile update failed: %s", e)
+        flash("Could not update profile right now.", "error")
 
     return redirect(url_for("dashboard_page"))
 
@@ -1340,7 +1431,7 @@ def enrich_waiting_players(players):
             profiles = supabase_fetch(
                 "profiles",
                 {
-                    "select": "id,username,description,avatar_url,banner_url",
+                    "select": "id,username,description,avatar_url,banner_url,color",
                     "id": f"in.({ids_filter})",
                 },
             )
@@ -1361,6 +1452,7 @@ def enrich_waiting_players(players):
             "description": profile.get("description") or "",
             "avatar_url": profile.get("avatar_url"),
             "banner_url": profile.get("banner_url"),
+            "color": resolve_profile_color(profile.get("color")),
         })
     return enriched
 

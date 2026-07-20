@@ -83,6 +83,28 @@
             font-weight: 800;
         }
 
+        .color-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .color-picker-row input[type="color"] {
+            width: 56px;
+            height: 44px;
+            padding: 0;
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 12px;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .color-picker-value {
+            opacity: 0.75;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
         .profile-edit-form {
             margin-top: 22px;
             display: grid;
@@ -103,6 +125,29 @@
             border: 1px solid rgba(255,255,255,0.12);
             border-radius: 14px;
             padding: 12px;
+        }
+
+        .profile-edit-form input[type="text"] {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(8, 8, 8, 0.55);
+            color: var(--white);
+            padding: 14px 16px;
+            font-family: "Montserrat", sans-serif;
+        }
+
+        .profile-edit-form input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(30, 215, 96, 0.85);
+            box-shadow: 0 0 0 3px rgba(30, 215, 96, 0.16);
+            background: rgba(12, 12, 12, 0.75);
+        }
+
+        .profile-edit-form .form-divider {
+            height: 1px;
+            background: rgba(255,255,255,0.1);
+            margin: 4px 0;
         }
 
         .profile-edit-form .primary-btn {
@@ -169,9 +214,51 @@
                 </div>
                 {% endif %}
 
-                <div class="profile-edit-username">
+                <div
+                    class="profile-edit-username"
+                    id="username-preview"
+                    style="color: {{ profile.color if profile else '#ffffff' }};"
+                >
                     {{ display_name }}
                 </div>
+
+                <form
+                    class="profile-edit-form"
+                    method="POST"
+                    action="{{ url_for('update_profile_username') }}"
+                >
+                    <div>
+                        <label for="username">Username</label>
+                        <input
+                            id="username"
+                            type="text"
+                            name="username"
+                            value="{{ profile.username if profile and profile.username else '' }}"
+                            placeholder="Choose a display name"
+                            maxlength="30"
+                            required
+                        >
+                    </div>
+
+                    <div>
+                        <label for="color">Username Color</label>
+                        <div class="color-picker-row">
+                            <input
+                                id="color"
+                                type="color"
+                                name="color"
+                                value="{{ profile.color if profile else '#ffffff' }}"
+                            >
+                            <span class="color-picker-value" id="color-value">
+                                {{ profile.color if profile else '#ffffff' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="primary-btn">Save Profile</button>
+                </form>
+
+                <div class="form-divider"></div>
 
                 <form
                     class="profile-edit-form"
@@ -264,5 +351,27 @@
 
         
     </section>
+
+<script>
+    const usernameInput = document.getElementById("username");
+    const colorInput = document.getElementById("color");
+    const usernamePreview = document.getElementById("username-preview");
+    const colorValue = document.getElementById("color-value");
+
+    function updatePreview() {
+        if (usernamePreview && usernameInput) {
+            usernamePreview.textContent = usernameInput.value.trim() || "Your Profile";
+        }
+        if (usernamePreview && colorInput) {
+            usernamePreview.style.color = colorInput.value;
+        }
+        if (colorValue && colorInput) {
+            colorValue.textContent = colorInput.value;
+        }
+    }
+
+    usernameInput?.addEventListener("input", updatePreview);
+    colorInput?.addEventListener("input", updatePreview);
+</script>
 </body>
 </html>

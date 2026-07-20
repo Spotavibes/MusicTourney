@@ -9,66 +9,81 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<style>
-    .form-error {
-        color: #ff4d4d;
-        font-weight: 600;
-        margin: 8px 0 16px;
-    }
-</style>
+
 <body>
 
-<section class="page-section">
+<section class="page-section create-page">
+    <div class="create-shell">
+        <div class="page-header create-header">
+            <span class="kicker">Host a Battle</span>
+            <h1>Create Tournament</h1>
+            <p>Set the theme, buy-in, and bracket size for your next showdown.</p>
+        </div>
 
-    <div class="page-header">
-        <h1>Create Tournament</h1>
-    </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
+        <div class="flash-list create-flash-list">
             {% for category, message in messages %}
-                <p class="form-error">{{ message }}</p>
+            <div class="flash {{ category }}">{{ message }}</div>
             {% endfor %}
+        </div>
         {% endif %}
-    {% endwith %}
+        {% endwith %}
 
-    <form class="battle-form" method="POST">
+        <form class="battle-form create-form" method="POST">
+            <label for="title">Tournament Name</label>
+            <input
+                id="title"
+                type="text"
+                name="title"
+                placeholder="e.g. Summer Beat Battle"
+                required
+            >
 
-        <input
-            type="text"
-            name="title"
-            placeholder="Tournament Name"
-            required
-        >
+            <label for="genre">Genre</label>
+            <input
+                id="genre"
+                type="text"
+                name="genre"
+                placeholder="e.g. Hip Hop, EDM, Pop"
+                required
+            >
 
-        <input
-            type="text"
-            name="genre"
-            placeholder="Genre"
-            required
-        >
+            <label for="topic">Topic</label>
+            <textarea
+                id="topic"
+                name="topic"
+                placeholder="Describe the theme or rules for song picks..."
+                required
+            ></textarea>
 
-        <textarea
-            name="topic"
-            placeholder="Topic"
-            required
-        ></textarea>
+            <label for="buy_in">Buy In (Tokens)</label>
+            <input
+                id="buy_in"
+                type="number"
+                name="buy_in"
+                placeholder="100"
+                min="1"
+                required
+            >
 
-        <input
-            type="number"
-            name="buy_in"
-            placeholder="Buy In Tokens"
-            required
-        >
+            <label for="max_players">Max Players</label>
+            <input
+                id="max_players"
+                type="number"
+                name="max_players"
+                placeholder="8"
+                min="2"
+                step="1"
+                required
+            >
+            <p class="create-hint">Must be a power of 2 (2, 4, 8, 16...).</p>
 
-        <button type="submit" class="primary-btn">
-            CREATE
-        </button>
-
-
-        <input type="number" name="max_players" placeholder="Max Players (power of 2)" min="2" step="1" required>
-    </form>
-    
+            <button type="submit" class="primary-btn">
+                CREATE TOURNAMENT
+            </button>
+        </form>
+    </div>
 </section>
 
 </body>
