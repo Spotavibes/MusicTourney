@@ -2223,10 +2223,9 @@ def turn_status(match_index):
 
 
 
-#payout function for the winner of a match, based on the round they won in
+# Payout and Elo updates for the winner of a completed match.
 def credit_round_tokens(match):
-    """Credits the winner of a completed match with the round's token payout.
-    Uses match_history.processed as a guard so this only ever runs once per match."""
+    """Apply token and Elo rewards once for a completed match."""
 
     if match.get("tokens_processed"):
         return 0
@@ -2236,13 +2235,41 @@ def credit_round_tokens(match):
 
     p1_won = (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0)
     winner_id = match["player1_id"] if p1_won else match["player2_id"]
+    loser_id = match["player2_id"] if p1_won else match["player1_id"]
 
-    account = supabase_get_account(winner_id)
-    if account:
-        new_balance = account.get("tokens", 0) + payout
-        supabase_patch("account_management", winner_id, {"tokens": new_balance})
+    winner = supabase_get_account(winner_id)
+    loser = supabase_get_account(loser_id)
 
-    # Mark processed so re-polling never double-credits this match.
+    if winner and loser:
+        winner_elo = float(winner.get("elo") or 0)
+        loser_elo = float(loser.get("elo") or 0)
+
+        # The winner gains 30 + 1% of the loser's pre-match Elo.
+        # The loser loses that exact same amount.
+        elo_change = round(30 + (loser_elo * 0.01), 2)
+
+        supabase_patch(
+            "account_management",
+            winner_id,
+            {
+                "tokens": (winner.get("tokens") or 0) + payout,
+                "elo": round(winner_elo + elo_change, 2),
+            },
+        )
+        supabase_patch(
+            "account_management",
+            loser_id,
+            {"elo": round(loser_elo - elo_change, 2)},
+        )
+    elif winner:
+        # Preserve token payouts if an opponent account cannot be loaded.
+        supabase_patch(
+            "account_management",
+            winner_id,
+            {"tokens": (winner.get("tokens") or 0) + payout},
+        )
+
+    # The existing guard now covers both token and Elo updates.
     supabase_patch("match_history", match["index"], {"tokens_processed": True}, id_column="index")
 
     return payout
