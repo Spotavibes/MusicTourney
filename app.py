@@ -399,12 +399,23 @@ def extract_storage_object_path(path_or_url, bucket):
     return value.lstrip("/")
 
 
+# Cache signed media URLs so waiting-room polls don't mint a new token every 2s.
+_SIGNED_URL_CACHE = {}
+_SIGNED_URL_CACHE_TTL_SECONDS = 60 * 60  # refresh tokens hourly; storage links last longer
+
+
 def supabase_create_signed_url(bucket, object_path, expires_in=60 * 60 * 24 * 7):
     """Create a temporary signed download URL for a private storage object."""
     supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
     supabase_key = os.getenv("SUPABASE_KEY")
     if not supabase_url or not supabase_key or not object_path:
         return None
+
+    cache_key = f"{bucket}:{object_path.lstrip('/')}"
+    cached = _SIGNED_URL_CACHE.get(cache_key)
+    now = datetime.now(timezone.utc).timestamp()
+    if cached and cached["expires_at"] > now:
+        return cached["url"]
 
     rest_url = f"{supabase_url}/storage/v1/object/sign/{bucket}/{object_path.lstrip('/')}"
     body = json.dumps({"expiresIn": expires_in}).encode("utf-8")
@@ -425,8 +436,15 @@ def supabase_create_signed_url(bucket, object_path, expires_in=60 * 60 * 24 * 7)
         if not signed:
             return None
         if signed.startswith("http"):
-            return signed
-        return f"{supabase_url}/storage/v1{signed}"
+            url = signed
+        else:
+            url = f"{supabase_url}/storage/v1{signed}"
+
+        _SIGNED_URL_CACHE[cache_key] = {
+            "url": url,
+            "expires_at": now + _SIGNED_URL_CACHE_TTL_SECONDS,
+        }
+        return url
     except Exception as e:
         logging.warning("Signed URL failed for %s/%s: %s", bucket, object_path, e)
         return None
@@ -1477,6 +1495,7 @@ def tournament_status(tournament_id):
 
     return jsonify({
         "current_players": tournament["current_players"],
+        "max_players": tournament.get("max_players") or 8,
         "started": tournament["started"],
         "players": enrich_waiting_players(players),
     })
