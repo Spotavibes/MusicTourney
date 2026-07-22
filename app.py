@@ -755,22 +755,63 @@ def leaderboard_page():
         sorted_players = sorted(
             mock_leaderboard_players, key=lambda x: x["elo"], reverse=True
         )
+        for i, player in enumerate(sorted_players, start=1):
+            player["rank"] = i
+            player.setdefault("avatar_url", None)
+            player.setdefault("color", "#ffffff")
         return render_template("leaderboard.html", players=sorted_players)
 
-    # Map Supabase row -> template fields.
-    # If your table uses different column names, adjust these fallbacks.
+    # Pull profile media for the ranked users when IDs are available.
+    profiles_by_id = {}
+    profiles_by_username = {}
+    user_ids = [
+        str(r.get("id") or r.get("user_id") or "")
+        for r in rows
+        if r.get("id") or r.get("user_id")
+    ]
+    user_ids = [uid for uid in user_ids if uid]
+
+    if user_ids:
+        try:
+            profiles = supabase_fetch(
+                "profiles",
+                {
+                    "select": "id,username,avatar_url,banner_url,color",
+                    "id": f"in.({','.join(user_ids)})",
+                },
+            )
+            for profile in profiles:
+                resolved = resolve_profile_for_display(profile)
+                if not resolved:
+                    continue
+                profiles_by_id[resolved["id"]] = resolved
+                if resolved.get("username"):
+                    profiles_by_username[resolved["username"].lower()] = resolved
+        except Exception as e:
+            logging.exception("Failed loading leaderboard profiles: %s", e)
+
     mapped = []
-    for r in rows:
+    for index, r in enumerate(rows, start=1):
+        user_id = r.get("id") or r.get("user_id")
+        name = (
+            r.get("name")
+            or r.get("username")
+            or r.get("display_name")
+            or r.get("player_name")
+            or user_id
+            or "Unknown"
+        )
+        profile = profiles_by_id.get(user_id) or profiles_by_username.get(
+            str(name).lower()
+        ) or {}
+
         mapped.append(
             {
-                "name": (
-                    r.get("name")
-                    or r.get("username")
-                    or r.get("display_name")
-                    or r.get("player_name")
-                    or r.get("id")
-                ),
+                "rank": index,
+                "name": name,
                 "elo": r.get("elo"),
+                "avatar_url": profile.get("avatar_url"),
+                "color": profile.get("color") or "#ffffff",
             }
         )
 

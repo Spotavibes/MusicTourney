@@ -8,6 +8,65 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .leaderboard-player {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .leaderboard-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(30, 215, 96, 0.55);
+            background: #2a2a2a;
+            flex-shrink: 0;
+        }
+
+        .leaderboard-avatar.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.4rem;
+            color: rgba(255,255,255,0.45);
+        }
+
+        .leaderboard-player-meta {
+            min-width: 0;
+        }
+
+        .leaderboard-player-meta h2 {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            font-size: 1.35rem;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .leaderboard-rank-inline {
+            color: var(--green);
+            font-weight: 900;
+            font-size: 1.05rem;
+            flex-shrink: 0;
+        }
+
+        .leaderboard-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .leaderboard-card .elo {
+            margin-top: 10px;
+        }
+    </style>
 </head>
 
 <body>
@@ -25,6 +84,9 @@
             <a href="{{ url_for('leaderboard_page') }}">Leaderboard</a>
             <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
             <a href="{{ url_for('buy_tokens_page') }}">Shop</a>
+            {% if current_user %}
+            <a href="{{ url_for('logout') }}">Logout</a>
+            {% endif %}
         </div>
 
         <a class="join-btn" href="{{ url_for('battles') }}">ENTER ARENA</a>
@@ -37,22 +99,40 @@
         </div>
     </section>
 
-    <!-- TODO: put supabase api code here to load leaderboard entries dynamically -->
-
     <section class="page-section">
         <div class="leaderboard-grid">
             {% for player in players %}
             <div class="leaderboard-card">
-                <div class="rank-number">#{{ loop.index }}</div>
-                <h2>{{ player.name }}</h2>
-                <div class="elo">{{ player.elo }} ELO</div>
-                <!-- TO BE ADDED LATER, RIGHT NOW JUST ELO
-                <div class="stats">
-                    <span>{{ player.genre }}</span>
-                    <span>{{ player.wins }} WINS</span>
-                    <span>{{ player.streak }} STREAK</span>
+                <div class="rank-number">#{{ player.rank or loop.index }}</div>
+
+                <div class="leaderboard-player">
+                    {% set display_name = player.name or 'Unknown' %}
+                    {% if player.avatar_url %}
+                    <img
+                        class="leaderboard-avatar"
+                        src="{{ player.avatar_url }}"
+                        alt="{{ display_name }}"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                    >
+                    <div class="leaderboard-avatar placeholder" style="display:none;">
+                        {{ display_name[:1]|upper }}
+                    </div>
+                    {% else %}
+                    <div class="leaderboard-avatar placeholder">
+                        {{ display_name[:1]|upper }}
+                    </div>
+                    {% endif %}
+
+                    <div class="leaderboard-player-meta">
+                        <h2>
+                            <span class="leaderboard-rank-inline">#{{ player.rank or loop.index }}</span>
+                            <span class="leaderboard-name" style="color: {{ player.color or '#ffffff' }};">
+                                {{ display_name }}
+                            </span>
+                        </h2>
+                        <div class="elo">{{ player.elo }} ELO</div>
+                    </div>
                 </div>
-                -->
             </div>
             {% endfor %}
         </div>
