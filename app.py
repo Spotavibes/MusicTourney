@@ -846,6 +846,81 @@ def match_history_page():
     )
 
 
+def build_token_momentum(transactions, current_balance):
+    """Build chronological balance points from the transactions shown on the dashboard."""
+    ordered_transactions = sorted(
+        transactions,
+        key=lambda tx: tx.get("created_at") or "",
+    )
+    starting_balance = current_balance - sum(
+        int(tx.get("amount") or 0) for tx in ordered_transactions
+    )
+    balance = starting_balance
+    points = []
+
+    for tx in ordered_transactions:
+        amount = int(tx.get("amount") or 0)
+        balance += amount
+        points.append({
+            "label": tx.get("created_at", "")[:10],
+            "balance": balance,
+            "amount": amount,
+            "reason": (tx.get("reason") or "transaction").replace("_", " ").title(),
+        })
+
+    return points
+
+
+def fetch_dashboard_battles(user_id):
+    """Return completed matches involving the current user."""
+    completed_matches = supabase_fetch(
+        "match_history",
+        {
+            "select": "*",
+            "current_phase": "eq.complete",
+            "order": "voting_ends_at.asc.nullslast",
+            "limit": "200",
+        },
+    )
+
+    matches_by_index = {
+        match.get("index"): match
+        for match in completed_matches
+        if match.get("player1_id") == user_id or match.get("player2_id") == user_id
+    }
+    return sorted(
+        matches_by_index.values(),
+        key=lambda match: match.get("voting_ends_at") or "",
+    )[-50:]
+
+
+def build_battle_performance(matches, user_id, usernames_by_id=None):
+    """Convert completed matches into the user's chronological performance arc."""
+    usernames_by_id = usernames_by_id or {}
+    ordered_matches = sorted(
+        matches,
+        key=lambda match: match.get("voting_ends_at") or "",
+    )
+    performance = []
+
+    for position, match in enumerate(ordered_matches, start=1):
+        is_player_one = match.get("player1_id") == user_id
+        opponent_id = match.get("player2_id" if is_player_one else "player1_id")
+        user_votes = int(match.get("p1_votes" if is_player_one else "p2_votes") or 0)
+        opponent_votes = int(match.get("p2_votes" if is_player_one else "p1_votes") or 0)
+        performance.append({
+            "label": f"Battle {position}",
+            "opponent": usernames_by_id.get(opponent_id, "Unknown player"),
+            "score": user_votes,
+            "opponent_score": opponent_votes,
+            "result": "WIN" if user_votes >= opponent_votes else "LOSS",
+            "tournament": str(match.get("which_tourney") or "Battle"),
+            "round": match.get("round_depth") or match.get("which_round") or "",
+        })
+
+    return performance
+
+
 @app.route("/dashboard")
 def dashboard_page():
 
@@ -861,8 +936,44 @@ def dashboard_page():
             "select": "*",
             "user_id": f"eq.{user['id']}",
             "order": "created_at.desc",
-            "limit": "10",
+            "limit": "50",
         },
+    )
+
+    try:
+        dashboard_battles = fetch_dashboard_battles(user["id"])
+    except Exception:
+        logging.exception("Failed loading battle performance for dashboard")
+        dashboard_battles = []
+
+    opponent_ids = {
+        match.get("player2_id" if match.get("player1_id") == user["id"] else "player1_id")
+        for match in dashboard_battles
+    }
+    opponent_ids.discard(None)
+    usernames_by_id = {}
+    if opponent_ids:
+        try:
+            ids_filter = ",".join(opponent_ids)
+            opponent_accounts = supabase_fetch(
+                "account_management",
+                {
+                    "select": "id,username",
+                    "id": f"in.({ids_filter})",
+                },
+            )
+            usernames_by_id = {
+                account["id"]: account.get("username") or "Unknown player"
+                for account in opponent_accounts
+            }
+        except Exception:
+            logging.exception("Failed loading opponent usernames for dashboard")
+
+    token_momentum = build_token_momentum(transactions, int(user.get("tokens") or 0))
+    battle_performance = build_battle_performance(
+        dashboard_battles,
+        user["id"],
+        usernames_by_id,
     )
 
     profile = None
@@ -876,6 +987,8 @@ def dashboard_page():
         user=user,
         transactions=transactions,
         profile=profile,
+        token_momentum=token_momentum,
+        battle_performance=battle_performance,
     )
 
 
