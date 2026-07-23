@@ -1794,17 +1794,31 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
     import math
 
     avatar_by_id = avatar_by_id or {}
-    BOX_W = 200
-    BOX_H = 72
-    ROW_H = 36
-    PAIR_GAP = 24
-    COL_GAP = 80
+    BOX_W = 220
+    BOX_H = 96
+    ROW_H = 48
+    PAIR_GAP = 36
+    COL_GAP = 72
 
-    num_rounds = int(math.log2(max_players))  # e.g. 8 players -> 3 rounds
-    # which_round values count down: round1 (first round) has max_players/2 matches,
-    # so which_round == matches_in_round. Round order (earliest->final):
+    num_rounds = int(math.log2(max_players))
     round_sizes = [max_players // (2 ** (i + 1)) for i in range(num_rounds)]
-    # e.g. max_players=8 -> round_sizes = [4, 2, 1]
+
+    def round_label(round_size, col):
+        if round_size == 1:
+            return "Final"
+        if round_size == 2:
+            return "Semifinals"
+        if round_size == 4:
+            return "Quarterfinals"
+        if col == 0:
+            return f"Round of {round_size * 2}"
+        return f"Round of {round_size * 2}"
+
+    def clean_name(user_id, fallback="Unknown"):
+        name = username_by_id.get(user_id)
+        if name is None or str(name).strip() in ("", "None", "null"):
+            return fallback
+        return str(name).strip()
 
     def real_match(round_, slot):
         return next(
@@ -1816,50 +1830,60 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
         p1_won = m["current_phase"] == "complete" and (m.get("p1_votes") or 0) >= (m.get("p2_votes") or 0)
         p2_won = m["current_phase"] == "complete" and not p1_won
         return {
-            "p1_username": username_by_id.get(m["player1_id"], "Unknown"),
-            "p2_username": username_by_id.get(m["player2_id"], "Unknown"),
+            "p1_username": clean_name(m["player1_id"]),
+            "p2_username": clean_name(m["player2_id"]),
             "p1_avatar": avatar_by_id.get(m["player1_id"]),
             "p2_avatar": avatar_by_id.get(m["player2_id"]),
-            "p1_seat": m["p1_seat"], "p2_seat": m["p2_seat"],
-            "p1_won": p1_won, "p2_won": p2_won,
+            "p1_seat": m["p1_seat"],
+            "p2_seat": m["p2_seat"],
+            "p1_won": p1_won,
+            "p2_won": p2_won,
             "p1_label": " WINNER" if (p1_won and label_winner) else "",
             "p2_label": " WINNER" if (p2_won and label_winner) else "",
-            "p1_filled": True, "p2_filled": True,
+            "p1_filled": True,
+            "p2_filled": True,
             "complete": m["current_phase"] == "complete",
+            "live": m.get("current_phase") == "live",
         }
 
     def empty_slot():
         return {
-            "p1_username": "TBD", "p2_username": "TBD",
-            "p1_avatar": None, "p2_avatar": None,
-            "p1_seat": None, "p2_seat": None,
-            "p1_won": False, "p2_won": False,
-            "p1_label": "", "p2_label": "",
-            "p1_filled": False, "p2_filled": False,
+            "p1_username": "Waiting",
+            "p2_username": "Waiting",
+            "p1_avatar": None,
+            "p2_avatar": None,
+            "p1_seat": None,
+            "p2_seat": None,
+            "p1_won": False,
+            "p2_won": False,
+            "p1_label": "",
+            "p2_label": "",
+            "p1_filled": False,
+            "p2_filled": False,
             "complete": False,
+            "live": False,
         }
 
     def advanced_occupant(slot_display):
         if not slot_display["complete"]:
             return None
         if slot_display["p1_won"]:
-            return slot_display["p1_seat"], slot_display["p1_username"]
-        return slot_display["p2_seat"], slot_display["p2_username"]
+            return slot_display["p1_seat"], slot_display["p1_username"], slot_display.get("p1_avatar")
+        return slot_display["p2_seat"], slot_display["p2_username"], slot_display.get("p2_avatar")
 
     def project_slot(left, right):
         slot = empty_slot()
         occ1 = advanced_occupant(left)
         occ2 = advanced_occupant(right)
         if occ1:
-            slot["p1_seat"], slot["p1_username"] = occ1
+            slot["p1_seat"], slot["p1_username"], slot["p1_avatar"] = occ1
             slot["p1_filled"] = True
         if occ2:
-            slot["p2_seat"], slot["p2_username"] = occ2
+            slot["p2_seat"], slot["p2_username"], slot["p2_avatar"] = occ2
             slot["p2_filled"] = True
         return slot
 
-    # Build each round's column of display-slots, left to right.
-    columns_display = []  # columns_display[col] = list of slot dicts
+    columns_display = []
     for col, round_size in enumerate(round_sizes):
         col_slots = []
         for slot_num in range(1, round_size + 1):
@@ -1873,10 +1897,16 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
                 col_slots.append(project_slot(prev[(slot_num - 1) * 2], prev[(slot_num - 1) * 2 + 1]))
         columns_display.append(col_slots)
 
-    # Layout: compute y-centers column by column, propagating up from round 1.
+    columns = []
+    for col, round_size in enumerate(round_sizes):
+        columns.append({
+            "label": round_label(round_size, col),
+            "matches": columns_display[col],
+        })
+
+    # Keep SVG geometry for compatibility, but the page now renders HTML columns.
     col0_top = [i * (BOX_H + PAIR_GAP) for i in range(round_sizes[0])]
     col0_center = [t + BOX_H / 2 for t in col0_top]
-
     centers = [col0_center]
     for col in range(1, num_rounds):
         prev_centers = centers[col - 1]
@@ -1887,13 +1917,11 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
         centers.append(this_centers)
 
     col_x = [40 + col * (BOX_W + COL_GAP) for col in range(num_rounds)]
-
     boxes = []
     connectors = []
     for col in range(num_rounds):
         for i, slot in enumerate(columns_display[col]):
             top = centers[col][i] - BOX_H / 2
-            color_index = len(boxes) * 2
             boxes.append({
                 **slot,
                 "x": col_x[col],
@@ -1902,9 +1930,7 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
                 "h": BOX_H,
                 "row_h": ROW_H,
                 "round_index": col,
-                "color_index": color_index,
             })
-
         if col + 1 < num_rounds:
             mid_x = col_x[col] + BOX_W + COL_GAP / 2
             for pair_idx in range(len(centers[col]) // 2):
@@ -1919,6 +1945,7 @@ def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=
     total_height = max(col0_top[-1] + BOX_H, 0) + 80 if col0_top else BOX_H + 80
 
     return {
+        "columns": columns,
         "boxes": boxes,
         "connectors": connectors,
         "width": col_x[-1] + BOX_W + 40,
@@ -1965,8 +1992,16 @@ def battle_start_page(tournament_id):
         )
         for profile in profiles:
             resolved_profile = resolve_profile_for_display(profile)
-            if resolved_profile and resolved_profile.get("avatar_url"):
+            if not resolved_profile:
+                continue
+            if resolved_profile.get("avatar_url"):
                 avatar_by_id[profile["id"]] = resolved_profile["avatar_url"]
+            profile_name = resolved_profile.get("username")
+            if profile_name and str(profile_name).strip() not in ("", "None", "null"):
+                # Prefer profile display name when account username is missing.
+                current = username_by_id.get(profile["id"])
+                if current is None or str(current).strip() in ("", "None", "null"):
+                    username_by_id[profile["id"]] = profile_name
     except Exception:
         logging.exception("Failed loading bracket profile pictures")
 

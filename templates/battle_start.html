@@ -7,136 +7,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Battle Start</title>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
-<body>
+<body class="bracket-body">
 
-<section class="page-section battle-start-page">
-    <div class="battle-start-shell">
-    <div class="page-header battle-start-header">
-        <span class="kicker">Tournament Bracket</span>
-        <h1>{{ tournament.title }}</h1>
-        {% if tournament_complete %}
-        <p>Final results are in.</p>
-        {% else %}
-        <p>The bracket is live.</p>
-        {% endif %}
-    </div>
-
-    <div class="bracket-wrapper">
-
-        <svg
-            class="bracket-svg"
-            viewBox="0 0 {{ bracket_layout.width }} {{ bracket_layout.height + (60 if tournament_complete and champion else 0) }}"
-            xmlns="http://www.w3.org/2000/svg"
-        >
-
-            {% for line in bracket_layout.connectors %}
-            <path class="bracket-line" d="M {{ line.x1 }} {{ line.y1 }} L {{ line.x2 }} {{ line.y2 }}"></path>
-            {% endfor %}
-
-            {% for box in bracket_layout.boxes %}
-
-         <rect class="seat-box seat-color-{{ box.color_index }} {% if box.p1_won %}winner-box{% endif %} {% if not box.p1_filled %}tbd-box{% endif %}"
-             style="--seat-hue: {{ (box.color_index * 137) % 360 }};"
-                x="{{ box.x }}"
-                y="{{ box.y }}"
-                width="{{ box.w }}"
-                height="{{ box.row_h }}">
-            </rect>
-
-            {% if box.p1_avatar %}
-            <image class="seat-avatar" href="{{ box.p1_avatar }}"
-                x="{{ box.x + 7 }}" y="{{ box.y + 6 }}" width="24" height="24"
-                preserveAspectRatio="xMidYMid slice"></image>
-            {% else %}
-            <circle class="seat-avatar-fallback" cx="{{ box.x + 19 }}" cy="{{ box.y + 18 }}" r="11"></circle>
-            {% endif %}
-
-            <text class="seat-text scrambling
-                        {% if box.p1_won %}winner-seat{% endif %}
-                        {% if not box.p1_filled %}tbd-seat{% endif %}"
-                x="{{ box.x + 38 }}"
-                y="{{ box.y + 24 }}">
-
-                {% if box.p1_filled %}
-                    {{ box.p1_seat }}. {{ box.p1_username }}{{ box.p1_label }}
-                {% else %}
-                    TBD
-                {% endif %}
-
-            </text>
-
-            <rect class="seat-box seat-color-{{ box.color_index + 1 }} {% if box.p2_won %}winner-box{% endif %} {% if not box.p2_filled %}tbd-box{% endif %}"
-                style="--seat-hue: {{ ((box.color_index + 1) * 137) % 360 }};"
-                x="{{ box.x }}"
-                y="{{ box.y + box.row_h }}"
-                width="{{ box.w }}"
-                height="{{ box.row_h }}">
-            </rect>
-
-            {% if box.p2_avatar %}
-            <image class="seat-avatar" href="{{ box.p2_avatar }}"
-                x="{{ box.x + 7 }}" y="{{ box.y + box.row_h + 6 }}" width="24" height="24"
-                preserveAspectRatio="xMidYMid slice"></image>
-            {% else %}
-            <circle class="seat-avatar-fallback" cx="{{ box.x + 19 }}" cy="{{ box.y + box.row_h + 18 }}" r="11"></circle>
-            {% endif %}
-
-            <text class="seat-text scrambling
-                        {% if box.p2_won %}winner-seat{% endif %}
-                        {% if not box.p2_filled %}tbd-seat{% endif %}"
-                x="{{ box.x + 38 }}"
-                y="{{ box.y + box.row_h + 24 }}">
-
-                {% if box.p2_filled %}
-                    {{ box.p2_seat }}. {{ box.p2_username }}{{ box.p2_label }}
-                {% else %}
-                    TBD
-                {% endif %}
-
-            </text>
-
-            {% endfor %}
-
+<section class="bracket-page">
+    <header class="bracket-hero">
+        <div class="bracket-hero-copy">
+            <p class="bracket-eyebrow">Tournament Bracket</p>
+            <h1>{{ tournament.title }}</h1>
             {% if tournament_complete and champion %}
-            <text class="champion-banner" x="{{ bracket_layout.width / 2 }}" y="{{ bracket_layout.height + 30 }}">
-                Seat {{ champion.seat }} — {{ champion.username }} WINNER
-            </text>
+            <p class="bracket-sub">Champion: Seat {{ champion.seat }} — {{ champion.username }}</p>
+            {% else %}
+            <p class="bracket-sub">Fight card is set. Next match loads automatically.</p>
             {% endif %}
+        </div>
+        <div class="bracket-hero-meta">
+            {% if tournament_complete %}
+            <span class="bracket-chip gold">Complete</span>
+            {% else %}
+            <span class="bracket-chip">Live</span>
+            {% endif %}
+        </div>
+    </header>
 
-        </svg>
+    <div class="bracket-board">
+        <div class="bracket-columns">
+            {% for column in bracket_layout.columns %}
+            <div class="bracket-column">
+                <div class="bracket-round-label">{{ column.label }}</div>
+                <div class="bracket-matches">
+                    {% for match in column.matches %}
+                    <article class="fight-card {% if match.live %}is-live{% endif %} {% if match.complete %}is-complete{% endif %}">
+                        <div class="fight-card-top">
+                            <span class="fight-slot">Match {{ loop.index }}</span>
+                            {% if match.live %}
+                            <span class="fight-live">Now</span>
+                            {% elif match.complete %}
+                            <span class="fight-done">Decided</span>
+                            {% else %}
+                            <span class="fight-pending">Queued</span>
+                            {% endif %}
+                        </div>
 
+                        <div class="fighter {% if match.p1_won %}is-winner{% endif %} {% if not match.p1_filled %}is-empty{% endif %}">
+                            {% if match.p1_avatar %}
+                            <img class="fighter-avatar" src="{{ match.p1_avatar }}" alt="{{ match.p1_username }}">
+                            {% else %}
+                            <div class="fighter-avatar placeholder">{{ (match.p1_username or '?')[:1]|upper }}</div>
+                            {% endif %}
+                            <div class="fighter-copy">
+                                <div class="fighter-seat">{% if match.p1_filled %}Seat {{ match.p1_seat }}{% else %}Open seat{% endif %}</div>
+                                <div class="fighter-name">{{ match.p1_username }}</div>
+                            </div>
+                            {% if match.p1_won %}<div class="fighter-badge">W</div>{% endif %}
+                        </div>
+
+                        <div class="fight-vs"><span>VS</span></div>
+
+                        <div class="fighter {% if match.p2_won %}is-winner{% endif %} {% if not match.p2_filled %}is-empty{% endif %}">
+                            {% if match.p2_avatar %}
+                            <img class="fighter-avatar" src="{{ match.p2_avatar }}" alt="{{ match.p2_username }}">
+                            {% else %}
+                            <div class="fighter-avatar placeholder">{{ (match.p2_username or '?')[:1]|upper }}</div>
+                            {% endif %}
+                            <div class="fighter-copy">
+                                <div class="fighter-seat">{% if match.p2_filled %}Seat {{ match.p2_seat }}{% else %}Open seat{% endif %}</div>
+                                <div class="fighter-name">{{ match.p2_username }}</div>
+                            </div>
+                            {% if match.p2_won %}<div class="fighter-badge">W</div>{% endif %}
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
+
+    {% if tournament_complete and champion %}
+    <div class="champion-strip">
+        <span class="champion-label">Winner</span>
+        <strong>Seat {{ champion.seat }} — {{ champion.username }}</strong>
     </div>
+    {% endif %}
 </section>
 
 <script>
     const tourneyId = "{{ tournament.id }}";
-    const scrambleKey = `auxwars_scrambled_${tourneyId}`;
-    const alreadyScrambled = sessionStorage.getItem(scrambleKey) === "true";
-
-    const seatLabels = document.querySelectorAll(".seat-text");
-
-    seatLabels.forEach((label, index) => {
-        if (alreadyScrambled) {
-            label.classList.add("revealed");
-            label.classList.remove("scrambling");
-        } else {
-            setTimeout(() => {
-                label.classList.add("revealed");
-            }, 300 + index * 100);
-
-            setTimeout(() => {
-                label.classList.remove("scrambling");
-            }, 1500 + index * 100);
-        }
-    });
-
-    if (!alreadyScrambled) {
-        sessionStorage.setItem(scrambleKey, "true");
-    }
 
     {% if tournament_complete %}
     setTimeout(() => {
