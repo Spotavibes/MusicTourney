@@ -974,6 +974,16 @@ body {
     margin-top: 4px;
 }
 
+.transaction-value.positive {
+    color: #35ff9c;
+    text-shadow: 0 0 10px rgba(53,255,156,.5);
+}
+
+.transaction-value.negative {
+    color: #ff4f6d;
+    text-shadow: 0 0 10px rgba(255,79,109,.5);
+}
+
 @media(max-width: 980px) {
     .shop-grid,
     .transaction-row,
@@ -1021,15 +1031,6 @@ body {
     .vote-percentage {
         font-size: 2.5rem;
     }
-.transaction-value.positive {
-    color: #35ff9c;
-    text-shadow: 0 0 10px rgba(53,255,156,.5);
-}
-
-.transaction-value.negative {
-    color: #ff4f6d;
-    text-shadow: 0 0 10px rgba(255,79,109,.5);
-}
 }
 
 /* --------------------------------------------------
@@ -1444,9 +1445,9 @@ body {
     overflow-x: auto;
     padding: 20px;
     border-radius: 28px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    backdrop-filter: blur(14px);
+    border: 2px solid #263b59;
+    background: #0d1726;
+    box-shadow: 0 18px 45px rgba(0,0,0,0.3);
 }
 
 .bracket-svg {
@@ -1457,8 +1458,9 @@ body {
 
 .seat-text {
     font-family: inherit;
-    font-size: 15px;
-    fill: rgba(255,255,255,0.92);
+    font-size: 12px;
+    font-weight: 700;
+    fill: #ffffff;
     opacity: 0;
     transform: translateX(-20px);
     transition: opacity 0.6s ease, transform 0.6s ease, fill 0.4s ease, font-size 0.4s ease;
@@ -1483,9 +1485,9 @@ body {
 }
 
 .seat-text.winner-seat {
-    fill: #ffd36e;
+    fill: #07140d;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 12px;
 }
 
 .seat-text.tbd-seat {
@@ -1493,28 +1495,46 @@ body {
 }
 
 .champion-banner {
-    fill: #ffd36e;
+    fill: #ffd447;
     font-weight: 800;
     font-size: 22px;
     text-anchor: middle;
 }
 
 .bracket-line {
-    stroke: rgba(255,255,255,0.24);
-    stroke-width: 2;
+    stroke: #5d7597;
+    stroke-width: 3;
     fill: none;
 }
 
 .seat-box {
-    stroke: rgba(30, 215, 96, 0.6);
+    stroke: hsl(var(--seat-hue) 90% 76%);
     stroke-width: 2;
-    fill: rgba(30, 215, 96, 0.06);
+    fill: hsl(var(--seat-hue) 78% 38%);
+}
+
+.seat-box.winner-box {
+    stroke: #fff5a3;
+    stroke-width: 3;
+    fill: #ffd447;
+}
+
+.seat-avatar {
+    clip-path: circle(50% at 50% 50%);
+    stroke: #ffffff;
+    stroke-width: 1;
+}
+
+.seat-avatar-fallback {
+    fill: #f04b72;
+    stroke: #ffffff;
+    stroke-width: 1.5;
 }
 
 .seat-box.tbd-box {
-    stroke: rgba(255,255,255,0.2);
+    stroke: #607089;
     stroke-dasharray: 4 4;
-    fill: rgba(255,255,255,0.02);
+    fill: #1a2433;
 }
 
 @media (max-width: 768px) {

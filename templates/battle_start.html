@@ -38,17 +38,26 @@
 
             {% for box in bracket_layout.boxes %}
 
-           <rect class="seat-box {% if not box.p1_filled %}tbd-box{% endif %}"
+         <rect class="seat-box seat-color-{{ box.color_index }} {% if box.p1_won %}winner-box{% endif %} {% if not box.p1_filled %}tbd-box{% endif %}"
+             style="--seat-hue: {{ (box.color_index * 137) % 360 }};"
                 x="{{ box.x }}"
                 y="{{ box.y }}"
                 width="{{ box.w }}"
                 height="{{ box.row_h }}">
             </rect>
 
+            {% if box.p1_avatar %}
+            <image class="seat-avatar" href="{{ box.p1_avatar }}"
+                x="{{ box.x + 7 }}" y="{{ box.y + 6 }}" width="24" height="24"
+                preserveAspectRatio="xMidYMid slice"></image>
+            {% else %}
+            <circle class="seat-avatar-fallback" cx="{{ box.x + 19 }}" cy="{{ box.y + 18 }}" r="11"></circle>
+            {% endif %}
+
             <text class="seat-text scrambling
                         {% if box.p1_won %}winner-seat{% endif %}
                         {% if not box.p1_filled %}tbd-seat{% endif %}"
-                x="{{ box.x + 10 }}"
+                x="{{ box.x + 38 }}"
                 y="{{ box.y + 24 }}">
 
                 {% if box.p1_filled %}
@@ -59,17 +68,26 @@
 
             </text>
 
-            <rect class="seat-box {% if not box.p2_filled %}tbd-box{% endif %}"
+            <rect class="seat-box seat-color-{{ box.color_index + 1 }} {% if box.p2_won %}winner-box{% endif %} {% if not box.p2_filled %}tbd-box{% endif %}"
+                style="--seat-hue: {{ ((box.color_index + 1) * 137) % 360 }};"
                 x="{{ box.x }}"
                 y="{{ box.y + box.row_h }}"
                 width="{{ box.w }}"
                 height="{{ box.row_h }}">
             </rect>
 
+            {% if box.p2_avatar %}
+            <image class="seat-avatar" href="{{ box.p2_avatar }}"
+                x="{{ box.x + 7 }}" y="{{ box.y + box.row_h + 6 }}" width="24" height="24"
+                preserveAspectRatio="xMidYMid slice"></image>
+            {% else %}
+            <circle class="seat-avatar-fallback" cx="{{ box.x + 19 }}" cy="{{ box.y + box.row_h + 18 }}" r="11"></circle>
+            {% endif %}
+
             <text class="seat-text scrambling
                         {% if box.p2_won %}winner-seat{% endif %}
                         {% if not box.p2_filled %}tbd-seat{% endif %}"
-                x="{{ box.x + 10 }}"
+                x="{{ box.x + 38 }}"
                 y="{{ box.y + box.row_h + 24 }}">
 
                 {% if box.p2_filled %}

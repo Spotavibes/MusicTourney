@@ -1795,9 +1795,10 @@ def tournament_waiting_page(tournament_id):
         tournament=tournament,
         players=enrich_waiting_players(players),
     )
-def build_bracket_layout(all_matches, username_by_id, max_players):
+def build_bracket_layout(all_matches, username_by_id, max_players, avatar_by_id=None):
     import math
 
+    avatar_by_id = avatar_by_id or {}
     BOX_W = 200
     BOX_H = 72
     ROW_H = 36
@@ -1822,6 +1823,8 @@ def build_bracket_layout(all_matches, username_by_id, max_players):
         return {
             "p1_username": username_by_id.get(m["player1_id"], "Unknown"),
             "p2_username": username_by_id.get(m["player2_id"], "Unknown"),
+            "p1_avatar": avatar_by_id.get(m["player1_id"]),
+            "p2_avatar": avatar_by_id.get(m["player2_id"]),
             "p1_seat": m["p1_seat"], "p2_seat": m["p2_seat"],
             "p1_won": p1_won, "p2_won": p2_won,
             "p1_label": " WINNER" if (p1_won and label_winner) else "",
@@ -1833,6 +1836,7 @@ def build_bracket_layout(all_matches, username_by_id, max_players):
     def empty_slot():
         return {
             "p1_username": "TBD", "p2_username": "TBD",
+            "p1_avatar": None, "p2_avatar": None,
             "p1_seat": None, "p2_seat": None,
             "p1_won": False, "p2_won": False,
             "p1_label": "", "p2_label": "",
@@ -1894,7 +1898,17 @@ def build_bracket_layout(all_matches, username_by_id, max_players):
     for col in range(num_rounds):
         for i, slot in enumerate(columns_display[col]):
             top = centers[col][i] - BOX_H / 2
-            boxes.append({**slot, "x": col_x[col], "y": top, "w": BOX_W, "h": BOX_H, "row_h": ROW_H})
+            color_index = len(boxes) * 2
+            boxes.append({
+                **slot,
+                "x": col_x[col],
+                "y": top,
+                "w": BOX_W,
+                "h": BOX_H,
+                "row_h": ROW_H,
+                "round_index": col,
+                "color_index": color_index,
+            })
 
         if col + 1 < num_rounds:
             mid_x = col_x[col] + BOX_W + COL_GAP / 2
@@ -1945,7 +1959,28 @@ def battle_start_page(tournament_id):
     accounts = supabase_fetch("account_management", {"select": "id,username", "id": f"in.({ids_filter})"})
     username_by_id = {a["id"]: a["username"] for a in accounts}
 
-    bracket_layout = build_bracket_layout(all_matches, username_by_id, tournament["max_players"])
+    avatar_by_id = {}
+    try:
+        profiles = supabase_fetch(
+            "profiles",
+            {
+                "select": "*",
+                "id": f"in.({ids_filter})",
+            },
+        )
+        for profile in profiles:
+            resolved_profile = resolve_profile_for_display(profile)
+            if resolved_profile and resolved_profile.get("avatar_url"):
+                avatar_by_id[profile["id"]] = resolved_profile["avatar_url"]
+    except Exception:
+        logging.exception("Failed loading bracket profile pictures")
+
+    bracket_layout = build_bracket_layout(
+        all_matches,
+        username_by_id,
+        tournament["max_players"],
+        avatar_by_id,
+    )
 
     champion = None
     if tournament_complete:

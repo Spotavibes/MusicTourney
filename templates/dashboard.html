@@ -444,16 +444,16 @@
             </div>
 
             <div class="transaction-value 
-    {% if tx.amount > 0 %}
+    {% if tx.amount|int > 0 %}
         positive
     {% else %}
         negative
     {% endif %}
 ">
-    {% if tx.amount > 0 %}
-        +{{ tx.amount }}
+    {% if tx.amount|int > 0 %}
+        +{{ tx.amount|int }}
     {% else %}
-        {{ tx.amount }}
+        {{ tx.amount|int }}
     {% endif %}
     Tokens
 </div>

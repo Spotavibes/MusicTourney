@@ -179,6 +179,39 @@
             cursor: not-allowed;
         }
 
+        .spectate-btn {
+            background: #1ed760;
+            color: #082211;
+            border-color: #1ed760;
+        }
+
+        .spectate-btn:hover {
+            background: #32e470;
+            border-color: #32e470;
+        }
+
+        .spectate-btn.disabled-btn {
+            background: #ff4f6d;
+            color: #21070d;
+            border-color: #ff4f6d;
+        }
+
+        .finished-pill {
+            background: rgba(255, 212, 71, 0.18);
+            color: #ffe58a;
+            border-color: rgba(255, 212, 71, 0.35);
+        }
+
+        .champion-row {
+            min-height: 44px;
+            margin: 0 0 14px;
+            padding: 10px 12px;
+            border-left: 3px solid #ffd447;
+            background: rgba(255, 212, 71, 0.1);
+            color: #ffe58a;
+            font-weight: 700;
+        }
+
         .empty-state {
             border: 1px dashed rgba(255, 255, 255, 0.2);
             border-radius: 16px;
@@ -240,18 +273,38 @@
                     <div class="meta-item"><strong>{{ tournament.current_players }}</strong>/{{ tournament.max_players }} players</div>
                     <div class="meta-item"><strong>{{ tournament.buy_in }}</strong> token buy-in</div>
                     <div class="meta-item">
-                        <strong>{% if tournament.started %}Live{% else %}Open{% endif %}</strong>
+                        <strong>
+                            {% if (tournament.status or '')|lower == 'complete' %}
+                            Finished
+                            {% elif tournament.started %}
+                            Live
+                            {% else %}
+                            Open
+                            {% endif %}
+                        </strong>
                     </div>
                 </div>
 
+                {% if (tournament.status or '')|lower == 'complete' and tournament.champion_username %}
+                <div class="champion-row">
+                    Champion: {{ tournament.champion_username }}
+                </div>
+                {% endif %}
+
                 <div class="card-buttons">
-                    {% if tournament.started %}
+                    {% if (tournament.status or '')|lower == 'complete' %}
+                    <button class="disabled-btn finished-pill" disabled>Finished</button>
+                    {% elif tournament.started %}
                     <button class="disabled-btn" disabled>Started</button>
                     {% else %}
                     <a class="join-battle-btn" href="{{ url_for('submit_songs', tournament_id=tournament.id) }}">Join Tournament</a>
                     {% endif %}
 
+                    {% if (tournament.status or '')|lower != 'complete' and tournament.started %}
+                    <a class="spectate-btn" href="{{ url_for('battle_game_redirect', tournament_id=tournament.id) }}">Spectate</a>
+                    {% else %}
                     <button class="spectate-btn disabled-btn" disabled>Spectate</button>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
