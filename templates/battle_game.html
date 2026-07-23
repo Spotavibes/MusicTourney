@@ -16,8 +16,9 @@
 
         .stopwatch-wrap {
             position: relative;
-            width: 72px;
-            height: 72px;
+            width: 68px;
+            height: 68px;
+            margin-top: -4px;
         }
 
         .stopwatch-ring {
@@ -51,7 +52,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
+            font-size: 28px;
             font-weight: 900;
             color: white;
         }
@@ -162,8 +163,10 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 40px 24px;
+            padding: 8px 24px;
             box-sizing: border-box;
+            max-height: 100vh;
+            overflow: hidden;
         }
 
         .side.blue-side {
@@ -176,9 +179,9 @@
         }
 
         .side-title {
-            font-size: 22px;
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 24px;
+            margin-bottom: 10px;
         }
 
         .blue-side .side-title {
@@ -191,6 +194,8 @@
 
         .embed-wrapper {
     position: relative;
+    width: 100%;
+    max-width: 520px;
 }
 
     /* Target the iframe directly, not just "> div", since the Spotify API
@@ -209,9 +214,12 @@
     }
 
         .play-btn {
+            flex: none;
+            align-self: center;
             margin-top: 20px;
             width: 100%;
-            max-width: 420px;
+            max-width: 520px;
+            height: auto;
             padding: 16px;
             font-size: 17px;
             font-weight: bold;
@@ -239,11 +247,14 @@
         }
 
         .vote-btn {
-            margin-top: 30px;
+            flex: none;
+            align-self: center;
+            margin-top: 12px;
             width: 100%;
-            max-width: 420px;
-            padding: 18px;
-            font-size: 18px;
+            max-width: 520px;
+            height: auto;
+            padding: 16px;
+            font-size: 17px;
             font-weight: bold;
             border: none;
             border-radius: 10px;
@@ -276,16 +287,16 @@
         }
 
         .vote-count {
-            margin-top: 14px;
-            font-size: 16px;
+            margin-top: 8px;
+            font-size: 14px;
             font-weight: bold;
             opacity: 0.85;
         }
 
         .status-bar {
             text-align: center;
-            padding: 14px 20px 8px 20px;
-            font-size: 22px;
+            padding: 4px 20px 2px 20px;
+            font-size: 24px;
             font-weight: 800;
             opacity: 0.95;
         }
@@ -314,8 +325,10 @@
             transition: font-size 0.4s ease, transform 0.4s ease;
 }
                 .embed-wrapper {
-            position: relative;
-        }
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+}
 
         .embed-wrapper > div {
             pointer-events: none;
@@ -566,7 +579,7 @@
         const p1Options = {
             uri: spotifyUrlToUri(p1Element.dataset.embedUrl),
             width: "100%",
-            height: "232",
+            height: "260",
         };
 
         IFrameAPI.createController(p1Element, p1Options, (controller) => {
@@ -578,7 +591,7 @@
         const p2Options = {
             uri: spotifyUrlToUri(p2Element.dataset.embedUrl),
             width: "100%",
-            height: "232",
+            height: "260",
         };
 
         IFrameAPI.createController(p2Element, p2Options, (controller) => {

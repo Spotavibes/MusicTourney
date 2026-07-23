@@ -1515,12 +1515,10 @@ def submit_songs(tournament_id):
         flash("Please log in to submit songs.", "error")
         return redirect(url_for("login"))
 
-    embed1 = extract_spotify_embed_url(request.form.get("embed1", ""))
-    embed2 = extract_spotify_embed_url(request.form.get("embed2", ""))
-    embed3 = extract_spotify_embed_url(request.form.get("embed3", ""))
+    embed = extract_spotify_embed_url(request.form.get("embed1", ""))
 
-    if not embed1 or not embed2 or not embed3:
-        flash("Please submit all three Spotify embed links.", "error")
+    if not embed:
+        flash("Please submit your Spotify embed link.", "error")
         return redirect(
             url_for(
                 "submit_songs",
@@ -1529,24 +1527,21 @@ def submit_songs(tournament_id):
         )
 
     valid_prefix = "https://open.spotify.com/embed/"
-    for embed in (embed1, embed2, embed3):
-        if not embed.startswith(valid_prefix):
-            flash("Please submit valid Spotify embed links (Share → Embed track).", "error")
-            return redirect(
-                url_for(
-                    "submit_songs",
-                    tournament_id=tournament_id,
-                )
+    if not embed.startswith(valid_prefix):
+        flash("Please submit a valid Spotify embed link (Share → Embed track).", "error")
+        return redirect(
+            url_for(
+                "submit_songs",
+                tournament_id=tournament_id,
             )
+        )
 
     supabase_post(
         "song_submissions",
         {
             "tournament_id": tournament_id,
             "user_id": user["id"],
-            "spotify_embed_1": embed1,
-            "spotify_embed_2": embed2,
-            "spotify_embed_3": embed3,
+            "spotify_embed": embed,
             "submitted_at": datetime.utcnow().isoformat() + "Z",
         },
     )
@@ -1757,8 +1752,8 @@ def generate_bracket(tournament_id, max_players):
             "bracket_slot": slot,
             "player1_id": p1["user_id"], "player2_id": p2["user_id"],
             "p1_seat": p1["seat_number"], "p2_seat": p2["seat_number"],
-            "p1_song": p1_submission["spotify_embed_1"] if p1_submission else None,
-            "p2_song": p2_submission["spotify_embed_1"] if p2_submission else None,
+            "p1_song": p1_submission["spotify_embed"] if p1_submission else None,
+            "p2_song": p2_submission["spotify_embed"] if p2_submission else None,
             "p1_votes": 0, "p2_votes": 0,
             "current_phase": "live" if is_first_match else "pending",
             "voting_ends_at": None,
@@ -2444,6 +2439,27 @@ def credit_round_tokens(match):
     p1_won = (match.get("p1_votes") or 0) >= (match.get("p2_votes") or 0)
     winner_id = match["player1_id"] if p1_won else match["player2_id"]
     loser_id = match["player2_id"] if p1_won else match["player1_id"]
+    payout_description = f"Round {depth} tournament payout ({match['index']})"
+
+    existing_payout = supabase_fetch(
+        "token_transactions",
+        {
+            "select": "id",
+            "user_id": f"eq.{winner_id}",
+            "amount": f"eq.{payout}",
+            "reason": "eq.tournament_payout",
+            "description": f"eq.{payout_description}",
+            "limit": "1",
+        },
+    )
+    if existing_payout:
+        supabase_patch(
+            "match_history",
+            match["index"],
+            {"tokens_processed": True},
+            id_column="index",
+        )
+        return 0
 
     winner = supabase_get_account(winner_id)
     loser = supabase_get_account(loser_id)
@@ -2475,6 +2491,19 @@ def credit_round_tokens(match):
             "account_management",
             winner_id,
             {"tokens": (winner.get("tokens") or 0) + payout},
+        )
+
+    if winner:
+        supabase_post(
+            "token_transactions",
+            {
+                "user_id": winner_id,
+                "amount": payout,
+                "transaction_type": "credit",
+                "tournament_id": match.get("which_tourney"),
+                "description": payout_description,
+                "reason": "tournament_payout",
+            },
         )
 
     # The existing guard now covers both token and Elo updates.
@@ -2514,9 +2543,7 @@ def seed_dev_tournament():
         supabase_post("song_submissions", {
             "tournament_id": tournament_id,
             "user_id": acct["id"],
-            "spotify_embed_1": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
-            "spotify_embed_2": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
-            "spotify_embed_3": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
+            "spotify_embed": "https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC",
             "submitted_at": datetime.utcnow().isoformat() + "Z",
         })
 

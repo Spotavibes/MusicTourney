@@ -14,41 +14,24 @@
     <div class="submission-shell">
         <div class="page-header submission-header">
             <span class="kicker">Song Submission</span>
-            <h1>Submit 3 Songs</h1>
-            <p>Paste your Spotify embed links below.</p>
+            <h1>Submit Your Song</h1>
+            <p>Paste your Spotify embed link below. You'll use this same track for every round.</p>
         </div>
 
         <form method="POST" action="{{ url_for('submit_songs', tournament_id=tournament.id) }}" class="battle-form submission-form">
-            <label for="embed1">Track 1</label>
+            <label for="embed1">Track</label>
             <input
                 id="embed1"
                 type="text"
                 name="embed1"
-                placeholder="Spotify Embed Link #1"
-                required
-            >
-
-            <label for="embed2">Track 2</label>
-            <input
-                id="embed2"
-                type="text"
-                name="embed2"
-                placeholder="Spotify Embed Link #2"
-                required
-            >
-
-            <label for="embed3">Track 3</label>
-            <input
-                id="embed3"
-                type="text"
-                name="embed3"
-                placeholder="Spotify Embed Link #3"
+                placeholder="Spotify Embed Link"
                 required
             >
 
             <button type="submit" class="primary-btn">
                 CONTINUE
             </button>
+        </form>
         </form>
     </div>
 </section>
